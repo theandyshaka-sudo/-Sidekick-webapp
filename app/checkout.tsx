@@ -26,19 +26,6 @@ function formatExpiry(raw: string): string {
   return d.length <= 2 ? d : `${d.slice(0, 2)}/${d.slice(2)}`;
 }
 
-// Simple Luhn check so obviously-fake numbers are caught (4242 4242 4242 4242 passes).
-function luhnValid(digits: string): boolean {
-  let sum = 0;
-  let dbl = false;
-  for (let i = digits.length - 1; i >= 0; i--) {
-    let d = Number(digits[i]);
-    if (dbl) { d *= 2; if (d > 9) d -= 9; }
-    sum += d;
-    dbl = !dbl;
-  }
-  return digits.length >= 13 && sum % 10 === 0;
-}
-
 export default function Checkout() {
   const router = useRouter();
   const palette = useRolePalette();
@@ -85,7 +72,6 @@ export default function Checkout() {
   const pay = async () => {
     if (!name.trim()) return fail("name", "Name on card isn't filled out.");
     if (digits.length < 15) return fail("number", digits.length === 0 ? "Card number isn't filled out." : "That card number is too short.");
-    if (!luhnValid(digits)) return fail("number", "That card number doesn't look valid.");
     if (!/^\d{2}\/\d{2}$/.test(expiry)) return fail("expiry", expiry ? "Enter the expiry as MM/YY." : "Expiry isn't filled out.");
     const mm = Number(expiry.slice(0, 2));
     if (mm < 1 || mm > 12) return fail("expiry", "That expiry month isn't valid.");
