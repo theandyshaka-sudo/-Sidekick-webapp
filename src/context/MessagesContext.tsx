@@ -27,6 +27,8 @@ type MessagesState = {
   sendOffer: (conversationId: string, offer: Omit<JobOffer, "status">) => void;
   setOfferStatus: (conversationId: string, messageId: string, status: JobOffer["status"]) => void;
   reportConversation: (conversationId: string, reason: ReportReason) => void;
+  // File a standalone report (e.g. reporting a group or a group member) into the admin console.
+  fileReport: (input: { reportedName: string; reason: ReportReason; context: string }) => void;
   setBlocked: (conversationId: string, blocked: boolean) => void;
   getAllReports: () => PlatformReport[];
   setReportStatus: (reportId: string, status: ReportStatus) => void;
@@ -49,6 +51,8 @@ export function MessagesProvider({ children }: { children: ReactNode }) {
   const [bannedUntil, setBannedUntil] = useState<Record<string, number>>({});
   // Moderation actions on reports: report id -> resolved/dismissed (open is the default).
   const [reportStatuses, setReportStatuses] = useState<Record<string, ReportStatus>>({});
+  // Standalone reports filed this session (e.g. group/member reports), shown in the admin console.
+  const [filedReports, setFiledReports] = useState<PlatformReport[]>([]);
   const idCounter = useRef(0);
   const { role } = useAppState();
   const activeRole = role ?? "client";
@@ -140,6 +144,25 @@ export function MessagesProvider({ children }: { children: ReactNode }) {
       list.map((c) => (c.id === conversationId ? { ...c, reported: true, reportReason: reason } : c))
     );
 
+  const fileReport = (input: { reportedName: string; reason: ReportReason; context: string }) => {
+    const id = nextId("report");
+    setFiledReports((prev) => [
+      {
+        id,
+        reporterRole: activeRole,
+        reporterName: "You (this session)",
+        reportedName: input.reportedName,
+        reason: input.reason,
+        context: input.context,
+        time: "Just now",
+        blocked: false,
+        status: "open",
+        messages: [],
+      },
+      ...prev,
+    ]);
+  };
+
   const setBlocked = (conversationId: string, blocked: boolean) =>
     updateConversations((list) => list.map((c) => (c.id === conversationId ? { ...c, blocked } : c)));
 
@@ -172,8 +195,9 @@ export function MessagesProvider({ children }: { children: ReactNode }) {
         }
       });
     });
+    const filed = filedReports.map((r) => ({ ...r, status: reportStatuses[r.id] ?? r.status }));
     const seeds = platformReports.map((r) => ({ ...r, status: reportStatuses[r.id] ?? r.status }));
-    return [...live, ...seeds];
+    return [...live, ...filed, ...seeds];
   };
 
   const setReportStatus = (reportId: string, status: ReportStatus) =>
@@ -215,6 +239,7 @@ export function MessagesProvider({ children }: { children: ReactNode }) {
         sendOffer,
         setOfferStatus,
         reportConversation,
+        fileReport,
         setBlocked,
         getAllReports,
         setReportStatus,

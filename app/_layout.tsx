@@ -9,6 +9,7 @@ import { ClientDataProvider } from "../src/context/ClientDataContext";
 import { MessagesProvider } from "../src/context/MessagesContext";
 import { JobsProvider } from "../src/context/JobsContext";
 import { VerificationQueueProvider } from "../src/context/VerificationQueueContext";
+import { GroupsProvider } from "../src/context/GroupsContext";
 import { ThemeSurface } from "../src/theme/ThemeSurface";
 
 function ThemedStack() {
@@ -31,7 +32,9 @@ export default function RootLayout() {
               <MessagesProvider>
                 <JobsProvider>
                   <VerificationQueueProvider>
-                    <ThemedStack />
+                    <GroupsProvider>
+                      <ThemedStack />
+                    </GroupsProvider>
                   </VerificationQueueProvider>
                 </JobsProvider>
               </MessagesProvider>

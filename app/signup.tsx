@@ -1,14 +1,14 @@
 import { useRef, useState } from "react";
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { ScreenHeader } from "../src/components/settings/ScreenHeader";
 import { FormField } from "../src/components/FormField";
 import { PrimaryButton } from "../src/components/PrimaryButton";
+import { FinishProfileModal } from "../src/components/FinishProfileModal";
 import { useAppState } from "../src/context/AppStateContext";
 import { useAuth } from "../src/context/AuthContext";
 import { useRolePalette } from "../src/theme/useRolePalette";
-import { useThemeVars } from "../src/theme/useThemeVars";
 import { MIN_PLATFORM_AGE, ageFromDob } from "../src/data/categoriesConfig";
 
 type FieldKey =
@@ -41,33 +41,6 @@ function Checkbox({ checked, onToggle, label }: { checked: boolean; onToggle: ()
       </View>
       <View className="flex-1">{label}</View>
     </Pressable>
-  );
-}
-
-// Shown after the account is created — the user can flesh out their profile now or jump straight
-// to ID verification.
-function FinishProfileModal({ onEdit, onSkip }: { onEdit: () => void; onSkip: () => void }) {
-  const palette = useRolePalette();
-  const themeVars = useThemeVars();
-  return (
-    <Modal visible transparent animationType="fade">
-      <View className="flex-1 justify-center bg-black/50 px-6" style={themeVars}>
-        <View className="rounded-3xl p-6" style={{ backgroundColor: palette.surface }}>
-          <View className="mb-4 h-14 w-14 items-center justify-center rounded-2xl" style={{ backgroundColor: palette.primarySoft }}>
-            <Ionicons name="person-circle-outline" size={30} color={palette.primary} />
-          </View>
-          <Text className="text-xl font-bold text-text">Account created!</Text>
-          <Text className="mt-2 text-sm leading-6 text-muted">
-            Want to finish setting up your profile now — add a photo and a short description — or do
-            it later?
-          </Text>
-          <View className="mt-6 gap-3">
-            <PrimaryButton label="Finish creating profile" onPress={onEdit} />
-            <PrimaryButton label="Not now" variant="outline" onPress={onSkip} />
-          </View>
-        </View>
-      </View>
-    </Modal>
   );
 }
 
@@ -159,6 +132,8 @@ export default function SignUp() {
       acceptedTerms: true,
       avatarUri: "",
       bio: "",
+      plan: null,
+      billingCycle: "monthly",
     });
     setSubmitting(false);
     if (!result.ok) {
@@ -171,7 +146,9 @@ export default function SignUp() {
     }
     // The role profile hydrates from the new account automatically (see Worker/ClientDataContext).
     await setLegalAccepted(true);
-    setShowFinish(true);
+    // Business owners pick a plan next; clients go straight to the finish-profile step.
+    if (isWorker) router.replace("/plans?onboarding=1");
+    else setShowFinish(true);
   };
 
   const editRoute = isWorker ? "/settings/worker-edit-profile" : "/settings/client-edit-profile";

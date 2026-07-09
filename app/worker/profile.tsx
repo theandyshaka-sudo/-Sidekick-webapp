@@ -9,6 +9,7 @@ import { SettingsRow } from "../../src/components/settings/SettingsRow";
 import { useAppState } from "../../src/context/AppStateContext";
 import { useAuth } from "../../src/context/AuthContext";
 import { useWorkerData } from "../../src/context/WorkerDataContext";
+import { planById } from "../../src/data/plans";
 import { useJobs } from "../../src/context/JobsContext";
 import { useRolePalette } from "../../src/theme/useRolePalette";
 import { workerProfile as staticProfile } from "../../src/data/workerMock";
@@ -19,9 +20,10 @@ export default function WorkerProfile() {
   const router = useRouter();
   const palette = useRolePalette();
   const { reset } = useAppState();
-  const { logOut } = useAuth();
+  const { logOut, currentUser } = useAuth();
   const { profile, verification } = useWorkerData();
   const { rating, reviews } = useJobs();
+  const plan = planById(currentUser?.plan);
 
   const handleLogout = async () => {
     await logOut();
@@ -84,6 +86,18 @@ export default function WorkerProfile() {
               ? `You're ${verifiedAge} · ${unlockedCount} job ${unlockedCount === 1 ? "category" : "categories"} unlocked`
               : "Confirm your age with an ID to unlock jobs you can do"}
           </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={palette.muted} />
+      </Pressable>
+
+      <Pressable
+        onPress={() => router.push("/plans")}
+        className="mt-3 flex-row items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3.5 active:opacity-70"
+      >
+        <Ionicons name="ribbon-outline" size={22} color={palette.primary} />
+        <View className="flex-1">
+          <Text className="text-sm font-semibold text-text">{plan ? `${plan.name} plan` : "Plan & billing"}</Text>
+          <Text className="text-xs text-muted">{plan ? "Tap to change or cancel" : "Choose a plan to unlock more"}</Text>
         </View>
         <Ionicons name="chevron-forward" size={18} color={palette.muted} />
       </Pressable>

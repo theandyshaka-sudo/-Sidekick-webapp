@@ -6,7 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { PrimaryButton } from "../src/components/PrimaryButton";
 import { useRolePalette } from "../src/theme/useRolePalette";
 
-const ADMIN_PASSCODE = "1458";
+const ADMIN_PASSCODE = "Rocky1234Andy";
 
 export default function AdminLogin() {
   const router = useRouter();
@@ -47,10 +47,11 @@ export default function AdminLogin() {
         <TextInput
           value={password}
           onChangeText={(t) => { setPassword(t); setError(false); }}
-          placeholder="••••"
+          placeholder="Enter passcode"
           placeholderTextColor={palette.muted}
           secureTextEntry
-          keyboardType="number-pad"
+          autoCapitalize="none"
+          autoCorrect={false}
           onSubmitEditing={submit}
           style={{ color: palette.text, borderColor: error ? palette.danger : palette.border }}
           className="rounded-2xl border bg-surface px-4 py-3 text-base"

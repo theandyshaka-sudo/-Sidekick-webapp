@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Role } from "./AppStateContext";
+import type { PlanId, BillingCycle } from "../data/plans";
 
 // A locally-stored account. This is the demo/offline backing store — when the real backend
 // lands, these records move server-side and the password is hashed there (never stored in
@@ -21,6 +22,8 @@ export type StoredAccount = {
   twoFactorEnabled: boolean;
   avatarUri: string;
   bio: string; // business owner "about" text; "" for clients
+  plan: PlanId | null; // business owner subscription tier; null = none chosen yet
+  billingCycle: BillingCycle;
 };
 
 export type SignUpInput = Omit<StoredAccount, "twoFactorEnabled">;
