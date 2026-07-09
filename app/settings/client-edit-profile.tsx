@@ -26,7 +26,7 @@ export default function ClientEditProfile() {
     // Persist to the stored account so edits survive a reload / re-login. The edit screen treats
     // the name as one field, so it lives in firstName (hydration joins first + last).
     await updateAccount({ firstName: form.fullName, lastName: "", avatarUri: form.avatarUri });
-    if (onboarding) router.replace("/onboarding/verify?onboarding=1");
+    if (onboarding) router.push("/onboarding/verify?onboarding=1");
     else router.back();
   };
 

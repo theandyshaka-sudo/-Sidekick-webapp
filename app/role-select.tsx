@@ -62,7 +62,7 @@ export default function RoleSelect() {
 
   const choose = async (role: Role) => {
     await setRole(role);
-    router.replace("/auth");
+    router.push("/auth");
   };
 
   return (

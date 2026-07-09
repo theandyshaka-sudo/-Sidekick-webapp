@@ -62,9 +62,15 @@ export default function OnboardingVerify() {
 
   const homeRoute = isWorker ? "/worker/home" : "/client/home";
   const leave = () => {
-    if (onboarding) router.replace(homeRoute);
-    else router.back();
+    if (onboarding) {
+      // Finished onboarding — clear the whole signup stack so you can't go "back" into it.
+      router.dismissAll();
+      router.replace(homeRoute);
+    } else {
+      router.back();
+    }
   };
+  const goBack = () => (router.canGoBack() ? router.back() : router.replace("/role-select"));
 
   const name = isWorker
     ? worker.profile.displayName
@@ -107,6 +113,9 @@ export default function OnboardingVerify() {
       >
         {onboarding ? (
           <View className="flex-row items-center gap-2">
+            <Pressable onPress={goBack} hitSlop={8} className="h-9 w-9 items-center justify-center rounded-full border border-border bg-surface active:opacity-70">
+              <Ionicons name="chevron-back" size={18} color={palette.text} />
+            </Pressable>
             <View className="h-2 w-8 rounded-full" style={{ backgroundColor: palette.primary }} />
             <View className="h-2 w-2 rounded-full" style={{ backgroundColor: palette.primary }} />
             <Text className="ml-1 text-xs font-semibold uppercase tracking-wider text-muted">Last step</Text>

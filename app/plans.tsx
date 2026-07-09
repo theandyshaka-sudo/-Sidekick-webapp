@@ -100,16 +100,16 @@ export default function Plans() {
         className="flex-row items-center justify-between border-b border-border bg-bg px-5 pb-4"
         style={{ paddingTop: insets.top + 12 }}
       >
-        {onboarding ? (
-          <Text className="text-lg font-bold text-text">Pick a plan</Text>
-        ) : (
-          <View className="flex-row items-center gap-3">
-            <Pressable onPress={() => router.back()} hitSlop={8} className="h-9 w-9 items-center justify-center rounded-full border border-border bg-surface active:opacity-70">
-              <Ionicons name="chevron-back" size={18} color={palette.text} />
-            </Pressable>
-            <Text className="text-lg font-bold text-text">Your plan</Text>
-          </View>
-        )}
+        <View className="flex-row items-center gap-3">
+          <Pressable
+            onPress={() => (router.canGoBack() ? router.back() : router.replace("/role-select"))}
+            hitSlop={8}
+            className="h-9 w-9 items-center justify-center rounded-full border border-border bg-surface active:opacity-70"
+          >
+            <Ionicons name="chevron-back" size={18} color={palette.text} />
+          </Pressable>
+          <Text className="text-lg font-bold text-text">{onboarding ? "Pick a plan" : "Your plan"}</Text>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>

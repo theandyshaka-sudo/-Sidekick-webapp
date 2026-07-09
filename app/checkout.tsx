@@ -133,8 +133,8 @@ export default function Checkout() {
         </View>
         {showFinish ? (
           <FinishProfileModal
-            onEdit={() => router.replace("/settings/worker-edit-profile?onboarding=1")}
-            onSkip={() => router.replace("/onboarding/verify?onboarding=1")}
+            onEdit={() => { setShowFinish(false); router.push("/settings/worker-edit-profile?onboarding=1"); }}
+            onSkip={() => { setShowFinish(false); router.push("/onboarding/verify?onboarding=1"); }}
           />
         ) : null}
       </View>

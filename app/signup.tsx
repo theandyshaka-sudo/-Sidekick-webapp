@@ -147,7 +147,7 @@ export default function SignUp() {
     // The role profile hydrates from the new account automatically (see Worker/ClientDataContext).
     await setLegalAccepted(true);
     // Business owners pick a plan next; clients go straight to the finish-profile step.
-    if (isWorker) router.replace("/plans?onboarding=1");
+    if (isWorker) router.push("/plans?onboarding=1");
     else setShowFinish(true);
   };
 
@@ -370,8 +370,8 @@ export default function SignUp() {
 
       {showFinish ? (
         <FinishProfileModal
-          onEdit={() => router.replace(`${editRoute}?onboarding=1`)}
-          onSkip={() => router.replace("/onboarding/verify?onboarding=1")}
+          onEdit={() => { setShowFinish(false); router.push(`${editRoute}?onboarding=1`); }}
+          onSkip={() => { setShowFinish(false); router.push("/onboarding/verify?onboarding=1"); }}
         />
       ) : null}
     </View>

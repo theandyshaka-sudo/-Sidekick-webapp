@@ -124,7 +124,9 @@
       "Bash(node render-icon.mjs)",
       "Bash(node v22.mjs)",
       "Bash(node scripts/postbuild-head.mjs)",
-      "Bash(echo \"build EXIT: $?\")"
+      "Bash(echo \"build EXIT: $?\")",
+      "Bash(node v23.mjs)",
+      "Bash(perl -0pi -e 's/await p\\\\.getByPlaceholder\\\\\\(\"10701\"\\\\\\)\\\\.fill\\\\\\(\"10701\"\\\\\\);\\\\n  await p\\\\.getByText\\\\\\(\\\\/\\\\^Pay/await p.getByPlaceholder\\(\"10701\"\\).last\\(\\).fill\\(\"10701\"\\);\\\\n  await p.getByText\\(\\\\/^Pay/' v23.mjs)"
     ],
     "additionalDirectories": [
       "/Users/mahbub/Downloads",

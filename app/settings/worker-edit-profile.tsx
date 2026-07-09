@@ -25,7 +25,7 @@ export default function WorkerEditProfile() {
     updateProfile(form);
     // Persist to the stored account so edits survive a reload / re-login.
     await updateAccount({ firstName: form.displayName, businessName: form.businessName, bio: form.bio, avatarUri: form.avatarUri });
-    if (onboarding) router.replace("/onboarding/verify?onboarding=1");
+    if (onboarding) router.push("/onboarding/verify?onboarding=1");
     else router.back();
   };
 

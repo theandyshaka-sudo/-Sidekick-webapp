@@ -27,7 +27,7 @@ export default function Auth() {
         style={{ paddingTop: insets.top + 16, paddingBottom: 72, paddingHorizontal: 24 }}
       >
         <Pressable
-          onPress={() => router.replace("/role-select")}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace("/role-select"))}
           hitSlop={8}
           className="mb-8 h-9 w-9 items-center justify-center rounded-full bg-white/20 active:opacity-70"
         >
