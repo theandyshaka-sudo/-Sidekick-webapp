@@ -119,7 +119,9 @@
       "Bash(gh auth *)",
       "Bash(git commit -q -m 'Add auth/onboarding, plans + checkout, and Groups \\(roles, permissions, logs\\); admin passcode update *)",
       "Bash(gh api *)",
-      "Bash(git commit -q --amend -m 'Add auth/onboarding, plans + checkout, and Groups \\(roles, permissions, logs\\); admin passcode *)"
+      "Bash(git commit -q --amend -m 'Add auth/onboarding, plans + checkout, and Groups \\(roles, permissions, logs\\); admin passcode *)",
+      "Bash(node -e \"console.log\\(JSON.stringify\\(require\\('./app.json'\\).expo.web,null,1\\)\\); console.log\\('name:', require\\('./app.json'\\).expo.name, '| slug:', require\\('./app.json'\\).expo.slug\\)\")",
+      "Bash(node render-icon.mjs)"
     ],
     "additionalDirectories": [
       "/Users/mahbub/Downloads",
