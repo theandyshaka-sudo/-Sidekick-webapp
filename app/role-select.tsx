@@ -1,4 +1,5 @@
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { useState } from "react";
+import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
@@ -6,11 +7,58 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useAppState, type Role } from "../src/context/AppStateContext";
 import { RoleCard } from "../src/components/RoleCard";
+import { useRolePalette } from "../src/theme/useRolePalette";
+import { useThemeVars } from "../src/theme/useThemeVars";
+
+// Explains how to install the web app to a phone's home screen (PWA — no app store needed).
+function DownloadModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const palette = useRolePalette();
+  const themeVars = useThemeVars();
+  const steps = [
+    { icon: "logo-apple" as const, title: "iPhone (Safari)", body: "Tap the Share button, then choose “Add to Home Screen.”" },
+    { icon: "logo-android" as const, title: "Android (Chrome)", body: "Tap the ⋮ menu, then choose “Add to Home screen” / “Install app.”" },
+  ];
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View className="flex-1 justify-center bg-black/50 px-6" style={themeVars}>
+        <View className="rounded-3xl p-6" style={{ backgroundColor: palette.surface }}>
+          <View className="mb-4 flex-row items-center justify-between">
+            <View className="flex-row items-center gap-2">
+              <View className="h-9 w-9 items-center justify-center rounded-xl" style={{ backgroundColor: palette.primarySoft }}>
+                <Ionicons name="download-outline" size={18} color={palette.primary} />
+              </View>
+              <Text className="text-lg font-bold text-text">Get the app</Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Ionicons name="close" size={22} color={palette.muted} />
+            </Pressable>
+          </View>
+          <Text className="mb-4 text-sm leading-6 text-muted">
+            Install SideKick on your phone's home screen — it opens fullscreen like a normal app, no
+            app store needed.
+          </Text>
+          <View className="gap-2.5">
+            {steps.map((s) => (
+              <View key={s.title} className="flex-row items-start gap-3 rounded-2xl border border-border bg-bg p-3.5">
+                <Ionicons name={s.icon} size={20} color={palette.text} />
+                <View className="flex-1">
+                  <Text className="text-sm font-semibold text-text">{s.title}</Text>
+                  <Text className="text-xs leading-5 text-muted">{s.body}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 export default function RoleSelect() {
   const { setRole } = useAppState();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const [downloadOpen, setDownloadOpen] = useState(false);
 
   const choose = async (role: Role) => {
     await setRole(role);
@@ -26,11 +74,20 @@ export default function RoleSelect() {
         end={{ x: 1, y: 1 }}
         style={{ paddingTop: insets.top + 16, paddingBottom: 64, paddingHorizontal: 24 }}
       >
-        <View className="flex-row items-center gap-2">
-          <View className="h-8 w-8 items-center justify-center rounded-lg bg-white/20">
-            <Ionicons name="flash" size={18} color="white" />
+        <View className="flex-row items-center justify-between">
+          <View className="flex-row items-center gap-2">
+            <View className="h-8 w-8 items-center justify-center rounded-lg bg-white/20">
+              <Ionicons name="flash" size={18} color="white" />
+            </View>
+            <Text className="text-base font-bold text-white">SideKick</Text>
           </View>
-          <Text className="text-base font-bold text-white">SideKick</Text>
+          <Pressable
+            onPress={() => setDownloadOpen(true)}
+            className="flex-row items-center gap-1.5 rounded-full bg-white/20 px-3 py-1.5 active:opacity-70"
+          >
+            <Ionicons name="download-outline" size={14} color="white" />
+            <Text className="text-xs font-semibold text-white">Download app</Text>
+          </Pressable>
         </View>
 
         <Text className="mt-8 text-3xl font-extrabold leading-tight text-white">
@@ -80,6 +137,8 @@ export default function RoleSelect() {
           <Text className="text-sm font-semibold" style={{ color: "#94A3B8" }}>Admin login</Text>
         </Pressable>
       </ScrollView>
+
+      <DownloadModal visible={downloadOpen} onClose={() => setDownloadOpen(false)} />
     </View>
   );
 }

@@ -1,16 +1,20 @@
 import { Redirect, Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAppState } from "../../src/context/AppStateContext";
+import { useAuth } from "../../src/context/AuthContext";
 import { useMessages } from "../../src/context/MessagesContext";
 import { useRolePalette } from "../../src/theme/useRolePalette";
 
 export default function WorkerLayout() {
   const { role, legalAccepted, isLoading } = useAppState();
+  const { currentUser, isLoading: authLoading } = useAuth();
   const { totalUnread } = useMessages();
   const palette = useRolePalette();
 
-  if (isLoading) return null;
-  if (role !== "worker" || !legalAccepted) return <Redirect href="/" />;
+  if (isLoading || authLoading) return null;
+  if (role !== "worker" || !legalAccepted || !currentUser) return <Redirect href="/" />;
+  // A paid plan is required to run a business on SideKick — no plan, no app.
+  if (!currentUser.plan) return <Redirect href="/plans?onboarding=1" />;
 
   return (
     <Tabs

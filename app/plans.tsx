@@ -4,7 +4,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PrimaryButton } from "../src/components/PrimaryButton";
-import { FinishProfileModal } from "../src/components/FinishProfileModal";
 import { useAuth } from "../src/context/AuthContext";
 import { useRolePalette } from "../src/theme/useRolePalette";
 import { PLANS, planFeatures, priceFor, yearlySavings, type BillingCycle, type Plan } from "../src/data/plans";
@@ -90,7 +89,6 @@ export default function Plans() {
   const { currentUser } = useAuth();
 
   const [cycle, setCycle] = useState<BillingCycle>("monthly");
-  const [showFinish, setShowFinish] = useState(false);
 
   const choose = (plan: Plan) => {
     router.push(`/checkout?plan=${plan.id}&cycle=${cycle}${onboarding ? "&onboarding=1" : ""}`);
@@ -112,17 +110,14 @@ export default function Plans() {
             <Text className="text-lg font-bold text-text">Your plan</Text>
           </View>
         )}
-        {onboarding ? (
-          <Pressable onPress={() => setShowFinish(true)} hitSlop={8} className="active:opacity-60">
-            <Text className="text-sm font-semibold" style={{ color: palette.primary }}>Maybe later</Text>
-          </Pressable>
-        ) : null}
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
         <Text className="text-2xl font-bold text-text">Choose your plan</Text>
         <Text className="mt-1 text-sm leading-6 text-muted">
-          Unlock advertising, business tools, and groups. You can change or cancel anytime.
+          {onboarding
+            ? "A plan is required to run your business on SideKick. Pick one to finish setting up — you can change or cancel anytime."
+            : "Unlock advertising, business tools, and groups. You can change or cancel anytime."}
         </Text>
 
         {/* Monthly / yearly toggle */}
@@ -169,13 +164,6 @@ export default function Plans() {
           </Text>
         </View>
       </ScrollView>
-
-      {showFinish ? (
-        <FinishProfileModal
-          onEdit={() => router.replace("/settings/worker-edit-profile?onboarding=1")}
-          onSkip={() => router.replace("/onboarding/verify?onboarding=1")}
-        />
-      ) : null}
     </View>
   );
 }
