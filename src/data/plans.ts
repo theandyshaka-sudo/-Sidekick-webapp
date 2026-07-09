@@ -36,7 +36,7 @@ export const PLANS: Plan[] = [
     id: "growth",
     name: "Growth",
     blurb: "Get discovered + join groups",
-    monthly: 7.99,
+    monthly: 9.99,
     yearly: 99.99,
     popular: true,
     advertise: true,
