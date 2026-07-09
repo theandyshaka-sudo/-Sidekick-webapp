@@ -1,0 +1,65 @@
+HOW TO PUT THE APP ONLINE AS A WEBAPP
+(Do these in order. Everything here is free to start.)
+
+The 3 websites you'll sign up for:
+    - GitHub (github.com) -> stores your code online
+    - Supabase (supabase.com) -> the backend (accounts, logins, database)
+    - Vercel (vercel.com) -> hosting (this is what actually puts the website on the internet)
+
+1. Put your code on GitHub (your code's online home)
+    - Make a free account at github.com
+    - Download GitHub Desktop from desktop.github.com (this lets you upload code without typing commands)
+    - Open GitHub Desktop -> File -> Add Local Repository -> pick your "taskteen" folder
+    - Click "Publish repository" (you can keep it Private)
+    - Done -> your code now lives on GitHub, and you "Push" to it whenever you make changes
+
+2. Set up Supabase (your backend)
+    - Make a free account at supabase.com
+    - Click "New Project" -> name it -> pick the region closest to you -> set a database password (save it somewhere safe)
+    - Wait about 2 minutes for it to finish building
+    - Go to Project Settings -> API and copy these TWO things:
+        - Project URL
+        - anon public key
+        - (NEVER copy or share the "service_role" secret key - that one stays private)
+    - Keep these two handy, Vercel needs them in the next step
+    - NOTE: the app's code still has to be wired to Supabase for real logins/data to work across devices. That's the coding part, I can do that for you. Until then the live site works like the demo (accounts saved per device).
+
+3. Set up Vercel (this puts the website online)
+    - Make a free account at vercel.com -> choose "Continue with GitHub" so they connect automatically
+    - Click "Add New" -> "Project"
+    - Find your "taskteen" repository in the list -> click Import
+    - Set these build settings:
+        - Framework Preset -> Other
+        - Build Command -> npx expo export -p web
+        - Output Directory -> dist
+    - Add these Environment Variables (paste in the two things from step 2):
+        - Name: EXPO_PUBLIC_SUPABASE_URL        Value: (your Project URL)
+        - Name: EXPO_PUBLIC_SUPABASE_ANON_KEY   Value: (your anon public key)
+    - Click "Deploy" and wait ~2 minutes
+    - You get a free live link like your-app.vercel.app -> that's your website, it's now online!
+
+4. Add one small file so pages don't break on refresh
+    - Without this, refreshing a page (like the profile page) can show an error
+    - It's a tiny file called "vercel.json" that tells the site to always load correctly
+    - I can create this file for you in 2 seconds, just ask
+
+5. (Optional) Use your own website name instead of ....vercel.app
+    - Buy a domain name from Namecheap.com, Cloudflare.com, or GoDaddy.com (example: getsidekick.com)
+    - In Vercel -> your Project -> Settings -> Domains -> type your domain -> follow the steps it shows
+    - The secure padlock / HTTPS is added automatically for free
+
+6. How to update the live site later (super easy)
+    - Make your changes in the code
+    - Open GitHub Desktop -> click "Commit" -> then "Push"
+    - Vercel automatically notices and rebuilds the website in ~2 minutes
+    - No other steps, it updates itself
+
+QUICK RECAP OF WHAT CONNECTS TO WHAT:
+    - GitHub holds the code
+    - Vercel pulls the code from GitHub and builds the website
+    - Vercel talks to Supabase (using the 2 keys) for accounts and data
+    - You push to GitHub -> Vercel auto-updates the live site
+
+(Note: turning this into phone apps for the iPhone App Store / Google Play is a
+separate process with different tools and accounts. This checklist is just for
+the website version.)

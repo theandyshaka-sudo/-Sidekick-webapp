@@ -1,0 +1,91 @@
+HOW TO MAKE THE APP ACTUALLY FUNCTIONAL
+(This is the "make everything really work" list. Deploying puts the site online,
+this list makes the features real: accounts, verification, memberships, etc.)
+(WEB APP ONLY - no phone app. You check IDs yourself. No background checks.)
+
+Quick idea of how it works:
+    - Right now the app is a working demo, but all the data lives on one device.
+    - To make it real you connect a few outside services (below), each one powers a feature.
+    - Some steps are just "sign up + copy a key", some also need code wiring -> I can do the code parts.
+
+The services you'll sign up for (all have free tiers to start):
+    - Supabase (supabase.com) -> accounts, database, logins, and storing the ID photos (the backbone)
+    - Resend (resend.com) -> sends emails (verify email, reset password, 2-step codes)
+    - Mapbox (mapbox.com) -> maps + "find workers near me"
+    - Stripe (stripe.com) -> ONLY for memberships/subscriptions (optional, only if you charge a fee)
+    - (Optional) Sentry (sentry.io) + PostHog (posthog.com) -> crash reports + usage stats
+
+1. Supabase = the backbone (do this first, everything needs it)
+    - What it does: real accounts + database so people sign up once and it works on every device, and users can actually see/message each other. It also securely stores the ID photos people upload for you to review.
+    - You do: create the free project (from the Deploying checklist) and get your 2 keys.
+    - Needs code (I do this): build the database tables, turn on Supabase login, set up secure ID-photo storage, and switch the app from "saved on one device" to "saved in the cloud."
+    - After this: logins are real, data is shared, two different people can use the app together.
+
+2. Email sending (verify email / reset password / 2-step login)
+    - What it does: sends the actual emails for "verify your email", "forgot password", and the 2-step login codes (these are just buttons right now, they don't send anything yet).
+    - You do: make a free account at resend.com and get an API key. (Supabase also has basic built-in email you can start with for free.)
+    - Needs code (I do this): connect Resend/Supabase so the emails actually send.
+
+3. ID checking = YOU do it by hand (already built, no company to connect!)
+    - What it does: a worker uploads their ID + types their info -> it shows up in your Admin -> ID review screen -> you look at it, check the ID matches their info, and approve or reject.
+    - You do: nothing to sign up for. This screen is already in the app.
+    - Needs code (I do this): make the uploaded ID photo save to Supabase so you can see it, and make "approve" actually mark that account verified in the database.
+    - IMPORTANT: you'll be holding real IDs of teenagers. Keep them private, and delete them when you don't need them anymore. I'll set the storage up so only you (admin) can open them, and your lawyer should give you a short privacy policy about it.
+
+4. Mapbox = maps + finding people nearby
+    - What it does: turns a zip code / address into a location, and powers "show me workers within X miles."
+    - You do: make a free account at mapbox.com and copy your access token (there's already a spot for it in the app's settings file: EXPO_PUBLIC_MAPBOX_TOKEN).
+    - Needs code (I do this): add the location search + the "near me" list.
+
+5. Notifications (the little alerts) - optional for a website
+    - What it does: alerts like "New job request!" or "Your ID was approved."
+    - You do: nothing to sign up for. On a website these are normal browser notifications (or you can just show them inside the app + send an email for important ones).
+    - Needs code (I do this): turn the notification toggles into real alerts.
+
+6. Stripe Billing = memberships (ONLY if you want to charge a fee) - optional
+    - What it does: charges a recurring membership fee (like a client "Plus" plan). Note: normal job payments are CASH between people, so you do NOT need a payment processor for those - only for memberships. If you're not charging anything yet, skip this.
+    - You do: make an account at stripe.com -> create your plan/price under "Products" -> copy your keys (secret key stays private, on the server).
+    - Needs code (I do this): add the "subscribe" button and connect it.
+
+7. (Optional but smart) Crash reports + usage stats
+    - What it does: tells you when the app breaks and how people use it.
+    - You do: make free accounts at sentry.io (crash reports) and posthog.com (usage stats), copy the keys.
+    - Needs code (I do this): drop them in.
+
+8. Legal + Insurance (NOT code, but you truly cannot launch to real people without this)
+    - What it does: protects you. The app right now shows placeholder legal text.
+    - You do:
+        - Hire a lawyer to write the real agreements (Terms, Business Owner agreement, Client agreement, Guardian consent, and a short privacy policy since you store IDs).
+        - Get an insurance broker to set up liability insurance.
+        - Have the lawyer confirm the age/category rules and the "workers are independent, not employees" setup.
+        - Ask the lawyer about NOT doing background checks on clients, since minors are involved - just so you know the tradeoff.
+    - This is from your own plan (HANDOFF file) and it's marked as required before launch.
+
+ONE IMPORTANT SAFETY NOTE ABOUT KEYS:
+    - Some keys are "public" and safe in the app (Supabase anon key, Mapbox token).
+    - Some keys are "secret" (Stripe secret key) and must NEVER go in the app -
+      they live on the server side (Supabase Edge Functions). I'll set that up so they stay safe.
+
+SUGGESTED ORDER TO DO THINGS:
+    1. Supabase (real accounts + data + ID storage)   <- biggest, do first
+    2. Email (Resend)                                 <- makes signup/login fully work
+    3. ID review wired up (upload + approve saves to the database)
+    4. Mapbox (find people nearby)
+    5. Chat + bookings + reviews wired to the database
+    6. Notifications
+    7. Guardian layer for minors (14-17)
+    8. Stripe Billing (memberships) - only if charging
+    9. Legal + insurance -> then launch to real people
+
+RECAP (what each thing powers):
+    - Supabase -> accounts, database, real data everywhere, ID photo storage
+    - Resend -> the emails
+    - You (Admin ID review) -> checking IDs by hand (no company needed)
+    - Mapbox -> location + nearby search
+    - Stripe Billing -> membership money (optional; job pay is cash, no processor needed)
+    - Lawyer + Insurance -> allowed to launch
+
+WHAT YOU DECIDED TO SKIP (and what it means):
+    - No Stripe Identity -> you review IDs yourself (already built). Saves ~$1.50 per check.
+    - No background checks (Checkr) -> clients are only ID-checked, not background-checked. Saves ~$30-65 per client. (Ask your lawyer since minors are involved.)
+    - No phone app -> web only, so no Apple ($99/yr) or Google Play ($25) accounts needed.

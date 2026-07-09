@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Inputs carry their own rounded border for focus; suppress the browser's default square
+   focus outline so it doesn't clip inside rounded fields. */
+input:focus,
+textarea:focus {
+  outline: none;
+}

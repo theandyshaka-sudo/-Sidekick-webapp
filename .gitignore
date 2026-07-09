@@ -1,0 +1,15 @@
+node_modules/
+.expo/
+dist/
+web-build/
+*.log
+
+# Env files with real secrets — never commit
+.env
+.env.local
+
+# macOS
+.DS_Store
+
+# TypeScript
+*.tsbuildinfo
