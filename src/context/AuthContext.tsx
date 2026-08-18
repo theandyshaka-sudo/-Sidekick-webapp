@@ -1,11 +1,10 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { supabase } from "../lib/supabase";
 import type { Role } from "./AppStateContext";
 import type { PlanId, BillingCycle } from "../data/plans";
 
-// A locally-stored account. This is the demo/offline backing store — when the real backend
-// lands, these records move server-side and the password is hashed there (never stored in
-// plaintext like this). `dobIso`/`businessName` are worker-only; `lastName` is client-only.
+// Backed by Supabase Auth (auth.users) + the `users` table. The password never lives here —
+// Supabase Auth hashes and stores it server-side.
 export type StoredAccount = {
   role: Role;
   firstName: string;
@@ -14,7 +13,6 @@ export type StoredAccount = {
   dobIso: string; // "" for clients (business owners give a date of birth at signup)
   email: string;
   username: string;
-  password: string; // plaintext — demo only; a real backend hashes server-side
   zip: string;
   city: string;
   country: string;
@@ -26,7 +24,7 @@ export type StoredAccount = {
   billingCycle: BillingCycle;
 };
 
-export type SignUpInput = Omit<StoredAccount, "twoFactorEnabled">;
+export type SignUpInput = Omit<StoredAccount, "twoFactorEnabled"> & { password: string };
 
 type AuthResult = { ok: true } | { ok: false; error: string };
 type LogInResult = { ok: true; account: StoredAccount } | { ok: false; error: string };
@@ -37,109 +35,229 @@ type AuthState = {
   signUp: (input: SignUpInput) => Promise<AuthResult>;
   logIn: (role: Role, username: string, password: string) => Promise<LogInResult>;
   logOut: () => Promise<void>;
-  // Persist profile edits (name, business, avatar, bio, location…) back onto the stored account.
+  // Persist profile edits (name, business, avatar, bio, location…) back onto the account row.
   updateAccount: (patch: Partial<StoredAccount>) => Promise<void>;
   setTwoFactor: (enabled: boolean) => Promise<void>;
-  // Stubbed — a real reset emails a link. We only report that the request was accepted.
   requestPasswordReset: (email: string) => Promise<void>;
 };
 
-const ACCOUNTS_KEY = "sidekick.accounts";
-const CURRENT_KEY = "sidekick.currentUser";
-
 const AuthContext = createContext<AuthState | null>(null);
 
-async function readAccounts(): Promise<StoredAccount[]> {
-  const raw = await AsyncStorage.getItem(ACCOUNTS_KEY);
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as StoredAccount[]) : [];
-  } catch {
-    return [];
-  }
+// Shape of a row from the `users` table (snake_case, as Postgres returns it).
+type UserRow = {
+  role: Role;
+  email: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  business_name: string | null;
+  dob: string | null;
+  username: string | null;
+  zip: string | null;
+  city: string | null;
+  country: string | null;
+  avatar_uri: string | null;
+  bio: string | null;
+  plan: string | null;
+  billing_cycle: string | null;
+  two_factor_enabled: boolean;
+};
+
+function rowToAccount(row: UserRow): StoredAccount {
+  return {
+    role: row.role,
+    firstName: row.first_name ?? "",
+    lastName: row.last_name ?? "",
+    businessName: row.business_name ?? "",
+    dobIso: row.dob ?? "",
+    email: row.email ?? "",
+    username: row.username ?? "",
+    zip: row.zip ?? "",
+    city: row.city ?? "",
+    country: row.country ?? "",
+    // Reaching this row at all means the signup flow's required checkbox already ran.
+    acceptedTerms: true,
+    twoFactorEnabled: row.two_factor_enabled,
+    avatarUri: row.avatar_uri ?? "",
+    bio: row.bio ?? "",
+    plan: (row.plan as PlanId | null) ?? null,
+    billingCycle: (row.billing_cycle as BillingCycle) ?? "monthly",
+  };
+}
+
+async function fetchAccount(userId: string): Promise<StoredAccount | null> {
+  const { data, error } = await supabase.from("users").select("*").eq("id", userId).maybeSingle();
+  if (error || !data) return null;
+  return rowToAccount(data as UserRow);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [accounts, setAccounts] = useState<StoredAccount[]>([]);
   const [currentUser, setCurrentUser] = useState<StoredAccount | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
+
     (async () => {
-      const stored = await readAccounts();
-      setAccounts(stored);
-      const rawCurrent = await AsyncStorage.getItem(CURRENT_KEY);
-      if (rawCurrent) {
-        try {
-          setCurrentUser(JSON.parse(rawCurrent) as StoredAccount);
-        } catch {
-          // ignore corrupt session
-        }
+      const { data } = await supabase.auth.getSession();
+      const userId = data.session?.user.id;
+      const account = userId ? await fetchAccount(userId) : null;
+      if (active) {
+        setCurrentUser(account);
+        setIsLoading(false);
       }
-      setIsLoading(false);
     })();
+
+    const { data: subscription } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!session) {
+        if (active) setCurrentUser(null);
+        return;
+      }
+      const account = await fetchAccount(session.user.id);
+      if (active) setCurrentUser(account);
+    });
+
+    return () => {
+      active = false;
+      subscription.subscription.unsubscribe();
+    };
   }, []);
 
-  const persistAccounts = async (next: StoredAccount[]) => {
-    setAccounts(next);
-    await AsyncStorage.setItem(ACCOUNTS_KEY, JSON.stringify(next));
-  };
-
-  const persistCurrent = async (account: StoredAccount | null) => {
-    setCurrentUser(account);
-    if (account) await AsyncStorage.setItem(CURRENT_KEY, JSON.stringify(account));
-    else await AsyncStorage.removeItem(CURRENT_KEY);
-  };
-
   const signUp = async (input: SignUpInput): Promise<AuthResult> => {
-    const uname = input.username.trim().toLowerCase();
-    if (accounts.some((a) => a.username.trim().toLowerCase() === uname)) {
-      return { ok: false, error: "That username is already taken." };
+    const email = input.email.trim();
+    const username = input.username.trim();
+
+    const { data, error } = await supabase.auth.signUp({ email, password: input.password });
+    if (error) {
+      const msg = error.message.toLowerCase();
+      if (msg.includes("already registered") || msg.includes("already exists")) {
+        return { ok: false, error: "An account with that email already exists." };
+      }
+      return { ok: false, error: error.message };
     }
-    if (accounts.some((a) => a.email.trim().toLowerCase() === input.email.trim().toLowerCase())) {
-      return { ok: false, error: "An account with that email already exists." };
+
+    const userId = data.user?.id;
+    if (!userId) return { ok: false, error: "Something went wrong creating your account. Try again." };
+
+    if (!data.session) {
+      // Email confirmation is required on this project, so there's no session yet to write the
+      // profile row under. Ask them to confirm, then this same flow completes on first login.
+      return {
+        ok: false,
+        error: "Account created — check your inbox for a confirmation link, then log in.",
+      };
     }
-    const account: StoredAccount = { ...input, twoFactorEnabled: false };
-    await persistAccounts([...accounts, account]);
-    await persistCurrent(account);
+
+    const { error: insertError } = await supabase.from("users").insert({
+      id: userId,
+      email,
+      role: input.role,
+      first_name: input.firstName,
+      last_name: input.lastName,
+      business_name: input.businessName,
+      dob: input.dobIso ? input.dobIso.slice(0, 10) : null,
+      username,
+      zip: input.zip,
+      city: input.city,
+      country: input.country,
+      avatar_uri: input.avatarUri,
+      bio: input.bio,
+      plan: input.plan,
+      billing_cycle: input.billingCycle,
+    });
+    if (insertError) {
+      const msg = insertError.message.toLowerCase();
+      if (msg.includes("username")) return { ok: false, error: "That username is already taken." };
+      return { ok: false, error: insertError.message };
+    }
+
+    await supabase.from("legal_acceptances").insert({
+      user_id: userId,
+      agreement_key: input.role === "worker" ? "worker_ibo_agreement" : "client_agreement",
+      version: "v1",
+    });
+
+    setCurrentUser({
+      role: input.role,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      businessName: input.businessName,
+      dobIso: input.dobIso,
+      email,
+      username,
+      zip: input.zip,
+      city: input.city,
+      country: input.country,
+      acceptedTerms: true,
+      twoFactorEnabled: false,
+      avatarUri: input.avatarUri,
+      bio: input.bio,
+      plan: input.plan,
+      billingCycle: input.billingCycle,
+    });
     return { ok: true };
   };
 
   const logIn = async (role: Role, username: string, password: string): Promise<LogInResult> => {
-    const uname = username.trim().toLowerCase();
-    const match = accounts.find((a) => a.username.trim().toLowerCase() === uname);
-    if (!match) return { ok: false, error: "No account found with that username." };
-    if (match.password !== password) return { ok: false, error: "Incorrect password." };
-    if (match.role !== role) {
+    const { data: email, error: lookupError } = await supabase.rpc("email_for_username", {
+      lookup_username: username.trim(),
+    });
+    if (lookupError || !email) return { ok: false, error: "No account found with that username." };
+
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return { ok: false, error: "Incorrect password." };
+
+    const account = await fetchAccount(data.user.id);
+    if (!account) return { ok: false, error: "Couldn't load your account. Try again." };
+
+    if (account.role !== role) {
+      await supabase.auth.signOut();
       return {
         ok: false,
-        error: `That username is registered as a ${match.role === "worker" ? "business owner" : "client"}.`,
+        error: `That username is registered as a ${account.role === "worker" ? "business owner" : "client"}.`,
       };
     }
-    await persistCurrent(match);
-    return { ok: true, account: match };
+
+    setCurrentUser(account);
+    return { ok: true, account };
   };
 
   const logOut = async () => {
-    await persistCurrent(null);
+    await supabase.auth.signOut();
+    setCurrentUser(null);
   };
 
   const updateAccount = async (patch: Partial<StoredAccount>) => {
     if (!currentUser) return;
-    const updated = { ...currentUser, ...patch };
-    await persistCurrent(updated);
-    await persistAccounts(accounts.map((a) => (a.username === updated.username ? updated : a)));
+    const { data } = await supabase.auth.getSession();
+    const userId = data.session?.user.id;
+    if (!userId) return;
+
+    const dbPatch: Record<string, unknown> = {};
+    if (patch.firstName !== undefined) dbPatch.first_name = patch.firstName;
+    if (patch.lastName !== undefined) dbPatch.last_name = patch.lastName;
+    if (patch.businessName !== undefined) dbPatch.business_name = patch.businessName;
+    if (patch.dobIso !== undefined) dbPatch.dob = patch.dobIso ? patch.dobIso.slice(0, 10) : null;
+    if (patch.username !== undefined) dbPatch.username = patch.username;
+    if (patch.zip !== undefined) dbPatch.zip = patch.zip;
+    if (patch.city !== undefined) dbPatch.city = patch.city;
+    if (patch.country !== undefined) dbPatch.country = patch.country;
+    if (patch.avatarUri !== undefined) dbPatch.avatar_uri = patch.avatarUri;
+    if (patch.bio !== undefined) dbPatch.bio = patch.bio;
+    if (patch.plan !== undefined) dbPatch.plan = patch.plan;
+    if (patch.billingCycle !== undefined) dbPatch.billing_cycle = patch.billingCycle;
+    if (patch.twoFactorEnabled !== undefined) dbPatch.two_factor_enabled = patch.twoFactorEnabled;
+
+    const { error } = await supabase.from("users").update(dbPatch).eq("id", userId);
+    if (error) return;
+    setCurrentUser({ ...currentUser, ...patch });
   };
 
   const setTwoFactor = async (enabled: boolean) => {
     await updateAccount({ twoFactorEnabled: enabled });
   };
 
-  // Real password reset needs the email provider (3rd-party). Until then this is a no-op that
-  // always "succeeds" so the UI can show a neutral confirmation.
-  const requestPasswordReset = async (_email: string) => {
-    return;
+  const requestPasswordReset = async (email: string) => {
+    await supabase.auth.resetPasswordForEmail(email);
   };
 
   return (
