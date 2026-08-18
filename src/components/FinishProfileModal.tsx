@@ -5,7 +5,7 @@ import { useRolePalette } from "../theme/useRolePalette";
 import { useThemeVars } from "../theme/useThemeVars";
 
 // Shown near the end of onboarding — the user can flesh out their profile now (photo, description)
-// or jump straight to ID verification.
+// or skip ahead.
 export function FinishProfileModal({ onEdit, onSkip }: { onEdit: () => void; onSkip: () => void }) {
   const palette = useRolePalette();
   const themeVars = useThemeVars();

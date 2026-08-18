@@ -10,7 +10,6 @@ import { ServicePickerModal } from "../../src/components/ServicePickerModal";
 import { useWorkerData } from "../../src/context/WorkerDataContext";
 import { useRolePalette } from "../../src/theme/useRolePalette";
 import { ALL_DAYS, DAY_LETTERS, formatDays, formatHour, formatServicePrice, type PriceType } from "../../src/data/workerMock";
-import { ageFromDob } from "../../src/data/categoriesConfig";
 
 const HOUR_OPTIONS = Array.from({ length: 17 }, (_, i) => i + 6); // 6 AM – 10 PM
 
@@ -54,9 +53,8 @@ function PriceTypeSelector({
 export default function WorkerServices() {
   const palette = useRolePalette();
   const router = useRouter();
-  const { services, addService, updateService, removeService, verification } = useWorkerData();
-  const verifiedAge = verification.verifiedDob ? ageFromDob(verification.verifiedDob) : null;
-  const canAdd = verification.status === "verified" && verifiedAge != null;
+  const { services, addService, updateService, removeService, ageInfo } = useWorkerData();
+  const canAdd = ageInfo.age != null;
 
   const [newTitle, setNewTitle] = useState("");
   const [newAmount, setNewAmount] = useState("");
@@ -203,9 +201,9 @@ export default function WorkerServices() {
             className="flex-row items-center gap-3 rounded-2xl border px-4 py-4 active:opacity-80"
             style={{ borderColor: palette.primary, backgroundColor: palette.primarySoft }}
           >
-            <Ionicons name="finger-print" size={22} color={palette.primary} />
+            <Ionicons name="happy-outline" size={22} color={palette.primary} />
             <View className="flex-1">
-              <Text className="text-sm font-semibold text-text">Verify your age to add services</Text>
+              <Text className="text-sm font-semibold text-text">Choose your age to add services</Text>
               <Text className="text-xs text-muted">We only show services you're allowed to offer at your age.</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={palette.primary} />
@@ -251,10 +249,10 @@ export default function WorkerServices() {
         onClose={() => setHourPicker(null)}
       />
 
-      {verifiedAge != null ? (
+      {ageInfo.age != null ? (
         <ServicePickerModal
           visible={pickerOpen}
-          age={verifiedAge}
+          age={ageInfo.age}
           existingNames={services.map((s) => s.title)}
           onClose={() => setPickerOpen(false)}
           onSelect={(name) => {

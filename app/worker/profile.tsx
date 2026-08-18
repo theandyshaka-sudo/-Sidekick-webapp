@@ -13,7 +13,7 @@ import { planById } from "../../src/data/plans";
 import { useJobs } from "../../src/context/JobsContext";
 import { useRolePalette } from "../../src/theme/useRolePalette";
 import { workerProfile as staticProfile } from "../../src/data/workerMock";
-import { ageFromDob, isCategoryUnlocked, serviceCategories } from "../../src/data/categoriesConfig";
+import { isCategoryUnlocked, serviceCategories } from "../../src/data/categoriesConfig";
 
 export default function WorkerProfile() {
   const insets = useSafeAreaInsets();
@@ -21,7 +21,7 @@ export default function WorkerProfile() {
   const palette = useRolePalette();
   const { reset } = useAppState();
   const { logOut, currentUser } = useAuth();
-  const { profile, verification } = useWorkerData();
+  const { profile, ageInfo } = useWorkerData();
   const { rating, reviews } = useJobs();
   const plan = planById(currentUser?.plan);
 
@@ -31,9 +31,8 @@ export default function WorkerProfile() {
     router.replace("/");
   };
 
-  const verifiedAge = verification.verifiedDob ? ageFromDob(verification.verifiedDob) : null;
-  const unlockedCount = verifiedAge != null
-    ? serviceCategories.filter((c) => isCategoryUnlocked(c, verifiedAge)).length
+  const unlockedCount = ageInfo.age != null
+    ? serviceCategories.filter((c) => isCategoryUnlocked(c, ageInfo.age!)).length
     : 0;
 
   return (
@@ -68,23 +67,23 @@ export default function WorkerProfile() {
         onPress={() => router.push("/settings/worker-verify")}
         className="mt-4 flex-row items-center gap-3 rounded-2xl border px-4 py-3.5 active:opacity-70"
         style={{
-          borderColor: verification.status === "verified" ? palette.success : palette.primary,
-          backgroundColor: verification.status === "verified" ? palette.success + "18" : palette.primarySoft,
+          borderColor: ageInfo.age != null ? palette.success : palette.primary,
+          backgroundColor: ageInfo.age != null ? palette.success + "18" : palette.primarySoft,
         }}
       >
         <Ionicons
-          name={verification.status === "verified" ? "shield-checkmark" : "finger-print"}
+          name={ageInfo.age != null ? "happy-outline" : "help-circle-outline"}
           size={22}
-          color={verification.status === "verified" ? palette.success : palette.primary}
+          color={ageInfo.age != null ? palette.success : palette.primary}
         />
         <View className="flex-1">
           <Text className="text-sm font-semibold text-text">
-            {verification.status === "verified" ? "Age verified" : "Verify your age"}
+            {ageInfo.age != null ? "Age set" : "Choose your age"}
           </Text>
           <Text className="text-xs text-muted">
-            {verification.status === "verified"
-              ? `You're ${verifiedAge} · ${unlockedCount} job ${unlockedCount === 1 ? "category" : "categories"} unlocked`
-              : "Confirm your age with an ID to unlock jobs you can do"}
+            {ageInfo.age != null
+              ? `You're ${ageInfo.age} · ${unlockedCount} job ${unlockedCount === 1 ? "category" : "categories"} unlocked`
+              : "Choose your age to see the jobs you can do"}
           </Text>
         </View>
         <Ionicons name="chevron-forward" size={18} color={palette.muted} />

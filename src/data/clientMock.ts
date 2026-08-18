@@ -28,8 +28,7 @@ export type NearbyWorker = {
   ratingCount: number;
   distanceMiles: number;
   availLabel: string; // hours this worker is willing to work, e.g. "12 PM–4 PM"
-  age: number; // shown to clients only once the business owner is age-verified
-  ageVerified: boolean;
+  age: number; // self-reported by the business owner, not verified
   bio: string;
   reviews: Array<{ author: string; stars: number; text: string }>;
 };

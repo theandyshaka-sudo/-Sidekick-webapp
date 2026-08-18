@@ -13,7 +13,7 @@ const FAQS = [
   {
     question: "Are business owners background checked?",
     answer:
-      "Business owners verify their age with a document. You verify your identity and pass a background check before your first booking, since you're inviting someone into your space.",
+      "Business owners self-report their age when they sign up — SideKick doesn't check it against an ID or run background checks. Use your own judgment, read reviews, and keep an eye out with the in-app messaging and reporting tools.",
   },
   {
     question: "What if something goes wrong during a job?",

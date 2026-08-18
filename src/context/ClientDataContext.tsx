@@ -18,13 +18,6 @@ export type ClientNotificationPrefs = {
   promos: boolean;
 };
 
-// Clients verify their identity with a government ID (HANDOFF §5). Like the worker age flow, it
-// only counts once an admin approves it: "pending" means it's in the admin review queue.
-export type ClientVerification = {
-  status: "unverified" | "pending" | "verified";
-  verifiedDob: string | null;
-};
-
 type ClientDataState = {
   profile: ClientProfileFields;
   updateProfile: (patch: Partial<ClientProfileFields>) => void;
@@ -32,11 +25,6 @@ type ClientDataState = {
   updateLocation: (patch: Partial<ClientLocation>) => void;
   notificationPrefs: ClientNotificationPrefs;
   updateNotificationPrefs: (patch: Partial<ClientNotificationPrefs>) => void;
-  verification: ClientVerification;
-  submitForVerification: (dobIso: string) => void; // → pending
-  approveVerification: () => void; // called when an admin approves this client's ID
-  rejectVerification: () => void;
-  clearVerification: () => void;
 };
 
 const ClientDataContext = createContext<ClientDataState | null>(null);
@@ -51,10 +39,6 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     bookingUpdates: true,
     messages: true,
     promos: false,
-  });
-  const [verification, setVerification] = useState<ClientVerification>({
-    status: "unverified",
-    verifiedDob: null,
   });
   const { currentUser } = useAuth();
 
@@ -83,16 +67,6 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   const updateNotificationPrefs = (patch: Partial<ClientNotificationPrefs>) =>
     setNotificationPrefs((prev) => ({ ...prev, ...patch }));
 
-  const submitForVerification = (dobIso: string) =>
-    setVerification({ status: "pending", verifiedDob: dobIso });
-
-  const approveVerification = () =>
-    setVerification((prev) => ({ ...prev, status: "verified" }));
-
-  const rejectVerification = () => setVerification({ status: "unverified", verifiedDob: null });
-
-  const clearVerification = () => setVerification({ status: "unverified", verifiedDob: null });
-
   return (
     <ClientDataContext.Provider
       value={{
@@ -102,11 +76,6 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         updateLocation,
         notificationPrefs,
         updateNotificationPrefs,
-        verification,
-        submitForVerification,
-        approveVerification,
-        rejectVerification,
-        clearVerification,
       }}
     >
       {children}

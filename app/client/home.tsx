@@ -7,7 +7,6 @@ import { Avatar } from "../../src/components/Avatar";
 import { WorkerListingCard } from "../../src/components/WorkerListingCard";
 import { EmptyState } from "../../src/components/EmptyState";
 import { ActionSheet, type ActionSheetOption } from "../../src/components/ActionSheet";
-import { VerifyGateModal } from "../../src/components/VerifyGateModal";
 import { useRolePalette } from "../../src/theme/useRolePalette";
 import { useClientData } from "../../src/context/ClientDataContext";
 import { useJobs } from "../../src/context/JobsContext";
@@ -94,7 +93,7 @@ export default function ClientDiscover() {
   const insets = useSafeAreaInsets();
   const palette = useRolePalette();
   const router = useRouter();
-  const { profile, location, updateLocation, verification } = useClientData();
+  const { profile, location, updateLocation } = useClientData();
   const { jobs, requestJob } = useJobs();
   const { ensureConversation } = useMessages();
   const [query, setQuery] = useState("");
@@ -102,7 +101,6 @@ export default function ClientDiscover() {
   const [locationOpen, setLocationOpen] = useState(false);
   const [sort, setSort] = useState<SortKey>("distance");
   const [sortOpen, setSortOpen] = useState(false);
-  const [gateOpen, setGateOpen] = useState(false);
 
   const requestedNames = useMemo(
     () => new Set(jobs.filter((j) => j.status !== "declined").map((j) => j.counterpartName)),
@@ -133,11 +131,6 @@ export default function ClientDiscover() {
   }));
 
   const handleRequest = (worker: NearbyWorker) => {
-    // Clients must verify their identity before requesting a booking or messaging (HANDOFF §5).
-    if (verification.status !== "verified") {
-      setGateOpen(true);
-      return;
-    }
     const { price, priceType } = parsePrice(worker.priceLabel);
     requestJob({
       service: worker.category,
@@ -264,14 +257,6 @@ export default function ClientDiscover() {
         title="Sort by"
         options={sortOptions}
         onClose={() => setSortOpen(false)}
-      />
-
-      <VerifyGateModal
-        visible={gateOpen}
-        role="client"
-        action="request a booking or message a business owner"
-        onVerify={() => { setGateOpen(false); router.push("/onboarding/verify"); }}
-        onClose={() => setGateOpen(false)}
       />
     </View>
   );

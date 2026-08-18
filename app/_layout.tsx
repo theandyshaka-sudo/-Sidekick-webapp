@@ -8,7 +8,6 @@ import { WorkerDataProvider } from "../src/context/WorkerDataContext";
 import { ClientDataProvider } from "../src/context/ClientDataContext";
 import { MessagesProvider } from "../src/context/MessagesContext";
 import { JobsProvider } from "../src/context/JobsContext";
-import { VerificationQueueProvider } from "../src/context/VerificationQueueContext";
 import { GroupsProvider } from "../src/context/GroupsContext";
 import { ThemeSurface } from "../src/theme/ThemeSurface";
 
@@ -31,11 +30,9 @@ export default function RootLayout() {
             <ClientDataProvider>
               <MessagesProvider>
                 <JobsProvider>
-                  <VerificationQueueProvider>
-                    <GroupsProvider>
-                      <ThemedStack />
-                    </GroupsProvider>
-                  </VerificationQueueProvider>
+                  <GroupsProvider>
+                    <ThemedStack />
+                  </GroupsProvider>
                 </JobsProvider>
               </MessagesProvider>
             </ClientDataProvider>

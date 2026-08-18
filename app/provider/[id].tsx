@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -6,11 +5,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { Avatar } from "../../src/components/Avatar";
 import { PrimaryButton } from "../../src/components/PrimaryButton";
 import { ReviewCard } from "../../src/components/ReviewCard";
-import { VerifyGateModal } from "../../src/components/VerifyGateModal";
 import { useRolePalette } from "../../src/theme/useRolePalette";
 import { useJobs } from "../../src/context/JobsContext";
 import { useMessages } from "../../src/context/MessagesContext";
-import { useClientData } from "../../src/context/ClientDataContext";
 import { nearbyWorkers } from "../../src/data/clientMock";
 import type { PriceType } from "../../src/data/workerMock";
 
@@ -25,8 +22,6 @@ export default function ProviderDetail() {
   const palette = useRolePalette();
   const { jobs, requestJob } = useJobs();
   const { ensureConversation } = useMessages();
-  const { verification } = useClientData();
-  const [gateOpen, setGateOpen] = useState(false);
 
   const worker = nearbyWorkers.find((w) => w.id === id);
   if (!worker) {
@@ -39,16 +34,12 @@ export default function ProviderDetail() {
 
   const alreadyRequested = jobs.some((j) => j.status !== "declined" && j.counterpartName === worker.name);
 
-  const verified = verification.status === "verified";
-
   const message = () => {
-    if (!verified) { setGateOpen(true); return; }
     const convId = ensureConversation(worker.name, worker.avatarUri, worker.category, worker.rating);
     router.push(`/chat/${convId}`);
   };
 
   const request = () => {
-    if (!verified) { setGateOpen(true); return; }
     const { price, priceType } = parsePrice(worker.priceLabel);
     requestJob({ service: worker.category, counterpartName: worker.name, counterpartAvatar: worker.avatarUri, price, priceType });
     message();
@@ -82,17 +73,10 @@ export default function ProviderDetail() {
               <Text className="text-sm text-muted">{worker.distanceMiles} mi away</Text>
             </View>
           </View>
-          {worker.ageVerified ? (
-            <View className="mt-3 flex-row items-center gap-1.5 rounded-full px-3 py-1" style={{ backgroundColor: palette.success + "1A" }}>
-              <Ionicons name="shield-checkmark" size={13} color={palette.success} />
-              <Text className="text-xs font-semibold" style={{ color: palette.success }}>Age-verified · {worker.age} years old</Text>
-            </View>
-          ) : (
-            <View className="mt-3 flex-row items-center gap-1.5 rounded-full border border-border px-3 py-1">
-              <Ionicons name="alert-circle-outline" size={13} color={palette.muted} />
-              <Text className="text-xs font-medium text-muted">Age not verified yet</Text>
-            </View>
-          )}
+          <View className="mt-3 flex-row items-center gap-1.5 rounded-full border border-border px-3 py-1">
+            <Ionicons name="happy-outline" size={13} color={palette.muted} />
+            <Text className="text-xs font-medium text-muted">{worker.age} years old (self-reported)</Text>
+          </View>
         </View>
 
         <View className="mt-6 px-6">
@@ -133,14 +117,6 @@ export default function ProviderDetail() {
           <PrimaryButton label={alreadyRequested ? "Requested" : "Request booking"} disabled={alreadyRequested} onPress={request} />
         </View>
       </View>
-
-      <VerifyGateModal
-        visible={gateOpen}
-        role="client"
-        action="request a booking or message a business owner"
-        onVerify={() => { setGateOpen(false); router.push("/onboarding/verify"); }}
-        onClose={() => setGateOpen(false)}
-      />
     </View>
   );
 }

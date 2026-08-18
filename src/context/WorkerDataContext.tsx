@@ -45,18 +45,16 @@ export type AlarmPrefs = {
 export const ALARM_SOUNDS: AlarmSound[] = ["Chime", "Bell", "Marimba", "Radar", "Digital", "Beep"];
 export const ALARM_LEAD_PRESETS = [15, 30, 45, 60, 90];
 
-// Document-based age verification (HANDOFF §5). `verifiedDob` is set only after a successful
-// verification; age is computed from it at read time (never stored as a static number). The raw
-// document itself is held by the verification provider, not here — we keep only the result.
-export type DocumentType = "passport" | "drivers_license" | "state_id";
-
-// The document DOB (verifiedDob) is captured when the worker submits, but only *counts* once an
-// admin approves it (status "verified"). "pending" means it's in the admin review queue.
-export type Verification = {
-  status: "unverified" | "pending" | "verified";
-  verifiedDob: string | null; // ISO date read from the submitted document
-  documentType: DocumentType | null;
+// Self-reported age — no ID, no admin review. The worker picks a number and confirms it; that's
+// the whole check. `lastChangedAt` gates a once-a-month cooldown on changing it (set on the first
+// pick too, so the cooldown starts counting immediately).
+export type AgeInfo = {
+  age: number | null;
+  confirmedAt: string | null;
+  lastChangedAt: string | null;
 };
+
+export type SetAgeResult = { ok: true } | { ok: false; availableOn: string };
 
 type WorkerDataState = {
   profile: WorkerProfileFields;
@@ -69,11 +67,8 @@ type WorkerDataState = {
   updateNotificationPrefs: (patch: Partial<WorkerNotificationPrefs>) => void;
   alarmPrefs: AlarmPrefs;
   updateAlarmPrefs: (patch: Partial<AlarmPrefs>) => void;
-  verification: Verification;
-  submitForVerification: (documentType: DocumentType, dobIso: string) => void; // → pending
-  approveVerification: () => void; // called when an admin approves this worker's ID
-  rejectVerification: () => void;
-  clearVerification: () => void;
+  ageInfo: AgeInfo;
+  setAge: (age: number) => SetAgeResult;
 };
 
 const WorkerDataContext = createContext<WorkerDataState | null>(null);
@@ -99,10 +94,10 @@ export function WorkerDataProvider({ children }: { children: ReactNode }) {
     leadMinutes: 45,
     sound: "Chime",
   });
-  const [verification, setVerification] = useState<Verification>({
-    status: "unverified",
-    verifiedDob: null,
-    documentType: null,
+  const [ageInfo, setAgeInfo] = useState<AgeInfo>({
+    age: null,
+    confirmedAt: null,
+    lastChangedAt: null,
   });
   const serviceIdCounter = useRef(seedServices.length);
   const { currentUser } = useAuth();
@@ -143,17 +138,22 @@ export function WorkerDataProvider({ children }: { children: ReactNode }) {
   const updateAlarmPrefs = (patch: Partial<AlarmPrefs>) =>
     setAlarmPrefs((prev) => ({ ...prev, ...patch }));
 
-  const submitForVerification = (documentType: DocumentType, dobIso: string) =>
-    setVerification({ status: "pending", verifiedDob: dobIso, documentType });
-
-  const approveVerification = () =>
-    setVerification((prev) => ({ ...prev, status: "verified" }));
-
-  const rejectVerification = () =>
-    setVerification({ status: "unverified", verifiedDob: null, documentType: null });
-
-  const clearVerification = () =>
-    setVerification({ status: "unverified", verifiedDob: null, documentType: null });
+  // Once a month, counted from the last change (or the first pick — the cooldown starts
+  // immediately so age can't be flipped back and forth to dodge category gating).
+  const setAge = (age: number): SetAgeResult => {
+    const now = new Date();
+    if (ageInfo.lastChangedAt) {
+      const availableOn = new Date(ageInfo.lastChangedAt);
+      availableOn.setMonth(availableOn.getMonth() + 1);
+      if (now < availableOn) return { ok: false, availableOn: availableOn.toISOString() };
+    }
+    setAgeInfo({
+      age,
+      confirmedAt: ageInfo.confirmedAt ?? now.toISOString(),
+      lastChangedAt: now.toISOString(),
+    });
+    return { ok: true };
+  };
 
   return (
     <WorkerDataContext.Provider
@@ -168,11 +168,8 @@ export function WorkerDataProvider({ children }: { children: ReactNode }) {
         updateNotificationPrefs,
         alarmPrefs,
         updateAlarmPrefs,
-        verification,
-        submitForVerification,
-        approveVerification,
-        rejectVerification,
-        clearVerification,
+        ageInfo,
+        setAge,
       }}
     >
       {children}

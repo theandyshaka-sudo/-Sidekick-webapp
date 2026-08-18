@@ -11,7 +11,6 @@ import { useMessages } from "../context/MessagesContext";
 import { useJobs } from "../context/JobsContext";
 import { useAppState } from "../context/AppStateContext";
 import { useWorkerData } from "../context/WorkerDataContext";
-import { useClientData } from "../context/ClientDataContext";
 import { useRolePalette } from "../theme/useRolePalette";
 import type { ChatMessage, ReportReason } from "../data/messagesMock";
 
@@ -42,12 +41,9 @@ export function ChatThread() {
   } = useMessages();
   const { scheduleFromOffer } = useJobs();
   const { role } = useAppState();
-  const { verification } = useWorkerData();
-  const { verification: clientVerification } = useClientData();
-  // A worker must be age-verified before sending or accepting job offers (scheduling).
-  const canSchedule = role !== "worker" || verification.status === "verified";
-  // A client must verify their identity before messaging at all (HANDOFF §5).
-  const clientUnverified = role === "client" && clientVerification.status !== "verified";
+  const { ageInfo } = useWorkerData();
+  // A worker must have an age on file before sending or accepting job offers (scheduling).
+  const canSchedule = role !== "worker" || ageInfo.age != null;
 
   // Opening a chat clears its unread badge.
   useEffect(() => {
@@ -249,17 +245,7 @@ export function ChatThread() {
         </View>
       ) : null}
 
-      {clientUnverified ? (
-        <Pressable
-          onPress={() => router.push("/onboarding/verify")}
-          className="flex-row items-center gap-2 border-t border-border bg-surface px-4 active:opacity-80"
-          style={{ paddingBottom: insets.bottom + 14, paddingTop: 14 }}
-        >
-          <Ionicons name="lock-closed" size={15} color={palette.primary} />
-          <Text className="flex-1 text-sm text-text">Verify your identity to message</Text>
-          <Ionicons name="chevron-forward" size={16} color={palette.muted} />
-        </Pressable>
-      ) : composerDisabled ? (
+      {composerDisabled ? (
         <View className="flex-row items-center justify-center gap-2 border-t border-border bg-surface px-4" style={{ paddingBottom: insets.bottom + 14, paddingTop: 14 }}>
           <Ionicons name="ban" size={14} color={palette.danger} />
           <Text className="text-sm text-muted">

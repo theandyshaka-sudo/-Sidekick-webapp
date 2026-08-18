@@ -41,7 +41,7 @@ export default function AdminLogin() {
           <Ionicons name="shield-checkmark" size={26} color={palette.primary} />
         </View>
         <Text className="mb-1 text-2xl font-bold text-text">Admin console</Text>
-        <Text className="mb-6 text-sm text-muted">Enter the admin passcode to review reports and ID verifications.</Text>
+        <Text className="mb-6 text-sm text-muted">Enter the admin passcode to review reports.</Text>
 
         <Text className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">Passcode</Text>
         <TextInput

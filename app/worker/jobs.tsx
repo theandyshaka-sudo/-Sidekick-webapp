@@ -124,16 +124,16 @@ export default function WorkerJobs() {
   const router = useRouter();
   const { requests, upcoming, completed, declineRequest, completeJob, scheduleFromOffer } = useJobs();
   const { ensureConversation, sendOffer } = useMessages();
-  const { verification } = useWorkerData();
-  const canSchedule = verification.status === "verified";
+  const { ageInfo } = useWorkerData();
+  const canSchedule = ageInfo.age != null;
   const [view, setView] = useState<"list" | "calendar">("list");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [offerFor, setOfferFor] = useState<Job | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
   const [manualDayOffset, setManualDayOffset] = useState(0);
 
-  // Adding or scheduling a job requires a verified age (HANDOFF §4/§5). Until then, these
-  // actions route the worker to the verification flow instead.
+  // Adding or scheduling a job requires an age on file (HANDOFF §4/§5). Until then, these
+  // actions route the worker to the age screen instead.
   const goVerify = () => router.push("/settings/worker-verify");
 
   // Days between today (midnight) and a selected calendar day key ("YYYY-M-D"), clamped to the
@@ -192,10 +192,10 @@ export default function WorkerJobs() {
             className="mb-5 flex-row items-center gap-3 rounded-2xl border px-4 py-3.5 active:opacity-80"
             style={{ borderColor: palette.primary, backgroundColor: palette.primarySoft }}
           >
-            <Ionicons name="finger-print" size={22} color={palette.primary} />
+            <Ionicons name="happy-outline" size={22} color={palette.primary} />
             <View className="flex-1">
-              <Text className="text-sm font-semibold text-text">Verify your age to start taking jobs</Text>
-              <Text className="text-xs text-muted">You can message clients, but adding or scheduling jobs is locked until you verify.</Text>
+              <Text className="text-sm font-semibold text-text">Choose your age to start taking jobs</Text>
+              <Text className="text-xs text-muted">You can message clients, but adding or scheduling jobs is locked until you choose your age.</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={palette.primary} />
           </Pressable>
@@ -295,7 +295,7 @@ export default function WorkerJobs() {
                   className="flex-row items-center justify-center gap-1.5 rounded-2xl border border-dashed border-border py-3.5 active:opacity-70"
                 >
                   <Ionicons name={canSchedule ? "add-circle-outline" : "lock-closed-outline"} size={18} color={palette.primary} />
-                  <Text className="text-sm font-semibold text-primary">{canSchedule ? "Add a job on this day" : "Verify to add a job"}</Text>
+                  <Text className="text-sm font-semibold text-primary">{canSchedule ? "Add a job on this day" : "Choose your age to add a job"}</Text>
                 </Pressable>
               ) : null}
             </View>

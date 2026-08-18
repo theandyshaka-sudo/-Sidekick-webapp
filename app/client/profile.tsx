@@ -18,16 +18,13 @@ export default function ClientProfile() {
   const palette = useRolePalette();
   const { reset } = useAppState();
   const { logOut } = useAuth();
-  const { profile, verification } = useClientData();
+  const { profile } = useClientData();
 
   const handleLogout = async () => {
     await logOut();
     await reset();
     router.replace("/");
   };
-
-  const verified = verification.status === "verified";
-  const pending = verification.status === "pending";
 
   return (
     <ScrollView
@@ -55,34 +52,6 @@ export default function ClientProfile() {
           />
         </View>
       </View>
-
-      <Pressable
-        onPress={() => router.push("/onboarding/verify")}
-        className="mt-4 flex-row items-center gap-3 rounded-2xl border px-4 py-3.5 active:opacity-70"
-        style={{
-          borderColor: verified ? palette.success : palette.primary,
-          backgroundColor: verified ? palette.success + "18" : palette.primarySoft,
-        }}
-      >
-        <Ionicons
-          name={verified ? "shield-checkmark" : pending ? "hourglass-outline" : "finger-print"}
-          size={22}
-          color={verified ? palette.success : palette.primary}
-        />
-        <View className="flex-1">
-          <Text className="text-sm font-semibold text-text">
-            {verified ? "Identity verified" : pending ? "Identity under review" : "Verify your identity"}
-          </Text>
-          <Text className="text-xs text-muted">
-            {verified
-              ? "Business owners can see you're a trusted, verified neighbor"
-              : pending
-                ? "An admin is reviewing your ID — this usually takes a little while"
-                : "Confirm your identity with an ID to book with confidence"}
-          </Text>
-        </View>
-        {verified ? null : <Ionicons name="chevron-forward" size={18} color={palette.muted} />}
-      </Pressable>
 
       <Text className="mb-3 mt-7 text-sm font-semibold uppercase tracking-wider text-muted">
         Settings
