@@ -20,6 +20,10 @@ export type Job = {
   rating: number | null; // 1–5 stars the client gave the worker for this job
   reviewText: string | null; // optional written review left with the rating
   cashConfirmed: boolean; // client tapped "I paid in cash"
+  // Present only for a job backed by the real `bookings` table (requested from Discover, or
+  // scheduled from a real chat). Its absence means this job is local-only session state (e.g. a
+  // manually-added job with no real account behind it).
+  remote?: { counterpartId: string };
 };
 
 // Fresh account — no jobs yet.

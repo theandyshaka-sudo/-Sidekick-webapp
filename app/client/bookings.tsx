@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -117,9 +117,15 @@ const GROUPS: Array<{ title: string; statuses: Job["status"][] }> = [
 export default function ClientBookings() {
   const insets = useSafeAreaInsets();
   const palette = useRolePalette();
-  const { jobs, upcoming, completed } = useJobs();
+  const { jobs, upcoming, completed, refreshJobs } = useJobs();
   const [view, setView] = useState<"list" | "calendar">("list");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+
+  // Pulls any status change the worker made since we last fetched (e.g. login) — opening the
+  // Bookings tab always shows the current state.
+  useEffect(() => {
+    refreshJobs();
+  }, []);
 
   const events: CalendarEvent[] = [...upcoming, ...completed]
     .filter((j) => j.scheduledAt || j.completedAt)

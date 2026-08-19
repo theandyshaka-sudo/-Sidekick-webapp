@@ -1,5 +1,8 @@
-import { createContext, useContext, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAppState } from "./AppStateContext";
+import { useAuth } from "./AuthContext";
+import { supabase } from "../lib/supabase";
+import { generateId } from "../lib/id";
 import { seedJobs, type Job, type JobStatus } from "../data/jobsMock";
 import type { PriceType } from "../data/workerMock";
 
@@ -15,12 +18,55 @@ type NewRequest = {
   counterpartAvatar: string;
   price: number;
   priceType: PriceType;
+  counterpartUserId?: string;
 };
 
 type ScheduleInput = NewRequest & { scheduledAt: string };
-type ManualInput = ScheduleInput & { status: Extract<JobStatus, "scheduled" | "completed"> };
+type ManualInput = Omit<NewRequest, "counterpartUserId"> & {
+  scheduledAt: string;
+  status: Extract<JobStatus, "scheduled" | "completed">;
+};
 
 export type Review = { id: string; author: string; avatar: string; rating: number; text: string; date: string };
+
+// Shape of a row from `my_bookings()` (snake_case, as Postgres returns it).
+type BookingRow = {
+  id: string;
+  counterpart_id: string;
+  counterpart_business_name: string | null;
+  counterpart_first_name: string | null;
+  counterpart_avatar_uri: string | null;
+  service: string;
+  price: number;
+  price_type: PriceType;
+  status: JobStatus;
+  scheduled_at: string | null;
+  completed_at: string | null;
+  initiated_by_me: boolean;
+  rating: number | null;
+  review_text: string | null;
+  cash_confirmed: boolean;
+  created_at: string;
+};
+
+function rowToJob(row: BookingRow): Job {
+  return {
+    id: row.id,
+    service: row.service,
+    counterpartName: row.counterpart_business_name || row.counterpart_first_name || "SideKick user",
+    counterpartAvatar: row.counterpart_avatar_uri ?? "",
+    price: row.price,
+    priceType: row.price_type,
+    status: row.status,
+    scheduledAt: row.scheduled_at,
+    completedAt: row.completed_at,
+    initiatedByMe: row.initiated_by_me,
+    rating: row.rating,
+    reviewText: row.review_text,
+    cashConfirmed: row.cash_confirmed,
+    remote: { counterpartId: row.counterpart_id },
+  };
+}
 
 type JobsState = {
   jobs: Job[];
@@ -32,6 +78,7 @@ type JobsState = {
   reviews: Review[]; // completed jobs with a written review, newest first
   weeklyEarnings: number[]; // last 6 weeks of completed earnings, oldest → newest
   streakWeeks: number; // consecutive weeks (ending this week) with ≥1 completed job
+  refreshJobs: () => void;
   requestJob: (input: NewRequest) => string;
   declineRequest: (id: string) => void;
   // Accept a time offer: upgrade a matching pending request to scheduled, or create a new
@@ -52,18 +99,52 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   }));
   const idCounter = useRef(0);
   const { role } = useAppState();
+  const { currentUser } = useAuth();
   const activeRole = role ?? "client";
   const jobs = byRole[activeRole];
 
   const update = (mutate: (list: Job[]) => Job[]) =>
     setByRole((prev) => ({ ...prev, [activeRole]: mutate(prev[activeRole]) }));
 
+  // Pulls this account's real bookings (my_bookings RPC) and merges them into local state
+  // alongside whatever local-only jobs exist (manually-added jobs have no real account behind
+  // them, so they stay session-local).
+  const loadBookings = async () => {
+    if (!currentUser) return;
+    const { data, error } = await supabase.rpc("my_bookings");
+    if (error) {
+      console.error("[my_bookings] fetch failed:", error.message);
+      return;
+    }
+    const fetched = ((data as BookingRow[] | null) ?? []).map(rowToJob);
+    setByRole((prev) => ({ ...prev, [activeRole]: [...fetched, ...prev[activeRole].filter((j) => !j.remote)] }));
+  };
+
+  useEffect(() => {
+    if (currentUser) {
+      loadBookings();
+    } else {
+      setByRole((prev) => ({
+        worker: prev.worker.filter((j) => !j.remote),
+        client: prev.client.filter((j) => !j.remote),
+      }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.username]);
+
+  const refreshJobs = () => {
+    loadBookings();
+  };
+
   const requestJob = (input: NewRequest): string => {
-    idCounter.current += 1;
-    const id = `job-new-${idCounter.current}`;
+    const id = input.counterpartUserId ? generateId() : (() => { idCounter.current += 1; return `job-new-${idCounter.current}`; })();
     const job: Job = {
       id,
-      ...input,
+      service: input.service,
+      counterpartName: input.counterpartName,
+      counterpartAvatar: input.counterpartAvatar,
+      price: input.price,
+      priceType: input.priceType,
       status: "requested",
       scheduledAt: null,
       completedAt: null,
@@ -71,64 +152,143 @@ export function JobsProvider({ children }: { children: ReactNode }) {
       rating: null,
       reviewText: null,
       cashConfirmed: false,
+      remote: input.counterpartUserId ? { counterpartId: input.counterpartUserId } : undefined,
     };
     update((list) => [job, ...list]);
+    if (input.counterpartUserId && currentUser) {
+      const isWorker = currentUser.role === "worker";
+      supabase
+        .from("bookings")
+        .insert({
+          id,
+          worker_id: isWorker ? currentUser.id : input.counterpartUserId,
+          client_id: isWorker ? input.counterpartUserId : currentUser.id,
+          service: input.service,
+          price: input.price,
+          price_type: input.priceType,
+          status: "requested",
+          initiated_by: currentUser.id,
+        })
+        .then(({ error }) => {
+          if (error) console.error("[bookings] insert failed:", error.message);
+        });
+    }
     return id;
   };
 
-  const declineRequest = (id: string) =>
+  const declineRequest = (id: string) => {
+    const job = jobs.find((j) => j.id === id);
     update((list) => list.map((j) => (j.id === id ? { ...j, status: "declined" } : j)));
-
-  const scheduleFromOffer = (input: ScheduleInput) => {
-    update((list) => {
-      const match = list.find(
-        (j) => j.status === "requested" && j.counterpartName === input.counterpartName
-      );
-      if (match) {
-        return list.map((j) =>
-          j.id === match.id
-            ? {
-                ...j,
-                service: input.service,
-                price: input.price,
-                priceType: input.priceType,
-                status: "scheduled",
-                scheduledAt: input.scheduledAt,
-              }
-            : j
-        );
-      }
-      idCounter.current += 1;
-      const job: Job = {
-        id: `job-new-${idCounter.current}`,
-        ...input,
-        status: "scheduled",
-        completedAt: null,
-        initiatedByMe: false,
-        rating: null,
-        reviewText: null,
-        cashConfirmed: false,
-      };
-      return [job, ...list];
-    });
+    if (job?.remote) {
+      supabase.from("bookings").update({ status: "declined" }).eq("id", id).then(({ error }) => {
+        if (error) console.error("[bookings] decline failed:", error.message);
+      });
+    }
   };
 
-  const completeJob = (id: string, finalPrice: number) =>
-    update((list) =>
-      list.map((j) =>
-        j.id === id
-          ? { ...j, status: "completed", price: finalPrice, completedAt: new Date().toISOString() }
-          : j
-      )
-    );
+  const scheduleFromOffer = (input: ScheduleInput) => {
+    const match = jobs.find((j) => j.status === "requested" && j.counterpartName === input.counterpartName);
 
-  const rateJob = (id: string, rating: number, reviewText?: string) =>
-    update((list) =>
-      list.map((j) => (j.id === id ? { ...j, rating, reviewText: reviewText?.trim() || j.reviewText } : j))
-    );
+    if (match) {
+      update((list) =>
+        list.map((j) =>
+          j.id === match.id
+            ? { ...j, service: input.service, price: input.price, priceType: input.priceType, status: "scheduled", scheduledAt: input.scheduledAt }
+            : j
+        )
+      );
+      if (match.remote) {
+        supabase
+          .from("bookings")
+          .update({ service: input.service, price: input.price, price_type: input.priceType, status: "scheduled", scheduled_at: input.scheduledAt })
+          .eq("id", match.id)
+          .then(({ error }) => {
+            if (error) console.error("[bookings] schedule update failed:", error.message);
+          });
+      }
+      return;
+    }
 
-  const confirmCash = (id: string) =>
+    const id = input.counterpartUserId ? generateId() : (() => { idCounter.current += 1; return `job-new-${idCounter.current}`; })();
+    const job: Job = {
+      id,
+      service: input.service,
+      counterpartName: input.counterpartName,
+      counterpartAvatar: input.counterpartAvatar,
+      price: input.price,
+      priceType: input.priceType,
+      status: "scheduled",
+      scheduledAt: input.scheduledAt,
+      completedAt: null,
+      initiatedByMe: false,
+      rating: null,
+      reviewText: null,
+      cashConfirmed: false,
+      remote: input.counterpartUserId ? { counterpartId: input.counterpartUserId } : undefined,
+    };
+    update((list) => [job, ...list]);
+    if (input.counterpartUserId && currentUser) {
+      const isWorker = currentUser.role === "worker";
+      supabase
+        .from("bookings")
+        .insert({
+          id,
+          worker_id: isWorker ? currentUser.id : input.counterpartUserId,
+          client_id: isWorker ? input.counterpartUserId : currentUser.id,
+          service: input.service,
+          price: input.price,
+          price_type: input.priceType,
+          status: "scheduled",
+          scheduled_at: input.scheduledAt,
+          initiated_by: currentUser.id,
+        })
+        .then(({ error }) => {
+          if (error) console.error("[bookings] insert failed:", error.message);
+        });
+    }
+  };
+
+  const completeJob = (id: string, finalPrice: number) => {
+    const job = jobs.find((j) => j.id === id);
+    const completedAt = new Date().toISOString();
+    update((list) =>
+      list.map((j) => (j.id === id ? { ...j, status: "completed", price: finalPrice, completedAt } : j))
+    );
+    if (job?.remote) {
+      supabase
+        .from("bookings")
+        .update({ status: "completed", price: finalPrice, completed_at: completedAt })
+        .eq("id", id)
+        .then(({ error }) => {
+          if (error) console.error("[bookings] complete failed:", error.message);
+        });
+    }
+  };
+
+  const rateJob = (id: string, rating: number, reviewText?: string) => {
+    const job = jobs.find((j) => j.id === id);
+    const text = reviewText?.trim() || job?.reviewText || null;
+    update((list) => list.map((j) => (j.id === id ? { ...j, rating, reviewText: text } : j)));
+    if (job?.remote) {
+      supabase
+        .from("bookings")
+        .update({ rating, review_text: text })
+        .eq("id", id)
+        .then(({ error }) => {
+          if (error) console.error("[bookings] rate failed:", error.message);
+        });
+    }
+  };
+
+  const confirmCash = (id: string) => {
+    const job = jobs.find((j) => j.id === id);
     update((list) => list.map((j) => (j.id === id ? { ...j, cashConfirmed: true } : j)));
+    if (job?.remote) {
+      supabase.from("bookings").update({ cash_confirmed: true }).eq("id", id).then(({ error }) => {
+        if (error) console.error("[bookings] cash confirm failed:", error.message);
+      });
+    }
+  };
 
   const addManualJob = (input: ManualInput) => {
     idCounter.current += 1;
@@ -213,6 +373,7 @@ export function JobsProvider({ children }: { children: ReactNode }) {
       value={{
         jobs,
         ...derived,
+        refreshJobs,
         requestJob,
         declineRequest,
         scheduleFromOffer,

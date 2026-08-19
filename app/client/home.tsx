@@ -138,6 +138,7 @@ export default function ClientDiscover() {
       counterpartAvatar: worker.avatarUri,
       price,
       priceType,
+      counterpartUserId: worker.workerId,
     });
     const convId = await ensureConversation(worker.name, worker.avatarUri, worker.category, worker.rating, worker.workerId, price, priceType);
     router.push(`/chat/${convId}`);

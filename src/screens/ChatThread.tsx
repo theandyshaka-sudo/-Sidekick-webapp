@@ -209,6 +209,7 @@ export function ChatThread() {
                     price: message.offer!.price,
                     priceType: message.offer!.priceType,
                     scheduledAt: message.offer!.scheduledAt,
+                    counterpartUserId: conversation.remote?.counterpartId,
                   });
                 }}
                 onDecline={() => setOfferStatus(conversation.id, message.id, "declined")}

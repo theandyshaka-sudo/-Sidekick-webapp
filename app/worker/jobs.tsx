@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -122,10 +122,16 @@ export default function WorkerJobs() {
   const insets = useSafeAreaInsets();
   const palette = useRolePalette();
   const router = useRouter();
-  const { requests, upcoming, completed, declineRequest, completeJob, scheduleFromOffer } = useJobs();
+  const { requests, upcoming, completed, declineRequest, completeJob, scheduleFromOffer, refreshJobs } = useJobs();
   const { ensureConversation, sendOffer } = useMessages();
   const { ageInfo } = useWorkerData();
   const canSchedule = ageInfo.age != null;
+
+  // Pulls any request/schedule change the client made since we last fetched (e.g. login) —
+  // opening the Jobs tab always shows the current state.
+  useEffect(() => {
+    refreshJobs();
+  }, []);
   const [view, setView] = useState<"list" | "calendar">("list");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [offerFor, setOfferFor] = useState<Job | null>(null);
@@ -310,7 +316,7 @@ export default function WorkerJobs() {
         onClose={() => setOfferFor(null)}
         onSubmit={async (draft) => {
           if (!offerFor) return;
-          const convId = await ensureConversation(offerFor.counterpartName, offerFor.counterpartAvatar, draft.service);
+          const convId = await ensureConversation(offerFor.counterpartName, offerFor.counterpartAvatar, draft.service, 5, offerFor.remote?.counterpartId);
           sendOffer(convId, draft);
           setOfferFor(null);
           router.push(`/chat/${convId}`);

@@ -43,7 +43,7 @@ export default function ProviderDetail() {
 
   const request = async () => {
     const { price, priceType } = parsePrice(worker.priceLabel);
-    requestJob({ service: worker.category, counterpartName: worker.name, counterpartAvatar: worker.avatarUri, price, priceType });
+    requestJob({ service: worker.category, counterpartName: worker.name, counterpartAvatar: worker.avatarUri, price, priceType, counterpartUserId: worker.workerId });
     await message();
   };
 
