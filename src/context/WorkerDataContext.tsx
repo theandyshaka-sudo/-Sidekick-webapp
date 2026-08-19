@@ -68,7 +68,7 @@ type WorkerDataState = {
   alarmPrefs: AlarmPrefs;
   updateAlarmPrefs: (patch: Partial<AlarmPrefs>) => void;
   ageInfo: AgeInfo;
-  setAge: (age: number) => SetAgeResult;
+  setAge: (age: number) => Promise<SetAgeResult>;
 };
 
 const WorkerDataContext = createContext<WorkerDataState | null>(null);
@@ -100,10 +100,10 @@ export function WorkerDataProvider({ children }: { children: ReactNode }) {
     lastChangedAt: null,
   });
   const serviceIdCounter = useRef(seedServices.length);
-  const { currentUser } = useAuth();
+  const { currentUser, updateAccount } = useAuth();
 
-  // Rehydrate the in-memory profile from the signed-in account (on boot, login, logout). Keyed on
-  // username so profile edits (which write back to the account under the same username) aren't
+  // Rehydrate the in-memory profile/age from the signed-in account (on boot, login, logout). Keyed
+  // on username so profile edits (which write back to the account under the same username) aren't
   // clobbered on the next render.
   useEffect(() => {
     if (currentUser?.role === "worker") {
@@ -113,8 +113,14 @@ export function WorkerDataProvider({ children }: { children: ReactNode }) {
         bio: currentUser.bio,
         avatarUri: currentUser.avatarUri,
       });
+      setAgeInfo({
+        age: currentUser.selfReportedAge,
+        confirmedAt: currentUser.ageConfirmedAt,
+        lastChangedAt: currentUser.ageLastChangedAt,
+      });
     } else if (!currentUser) {
       setProfile({ displayName: "", businessName: "", bio: "", avatarUri: "" });
+      setAgeInfo({ age: null, confirmedAt: null, lastChangedAt: null });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.username]);
@@ -139,19 +145,26 @@ export function WorkerDataProvider({ children }: { children: ReactNode }) {
     setAlarmPrefs((prev) => ({ ...prev, ...patch }));
 
   // Once a month, counted from the last change (or the first pick — the cooldown starts
-  // immediately so age can't be flipped back and forth to dodge category gating).
-  const setAge = (age: number): SetAgeResult => {
+  // immediately so age can't be flipped back and forth to dodge category gating). Persisted to
+  // the `users` row so the cooldown survives an app restart.
+  const setAge = async (age: number): Promise<SetAgeResult> => {
     const now = new Date();
     if (ageInfo.lastChangedAt) {
       const availableOn = new Date(ageInfo.lastChangedAt);
       availableOn.setMonth(availableOn.getMonth() + 1);
       if (now < availableOn) return { ok: false, availableOn: availableOn.toISOString() };
     }
-    setAgeInfo({
+    const next: AgeInfo = {
       age,
       confirmedAt: ageInfo.confirmedAt ?? now.toISOString(),
       lastChangedAt: now.toISOString(),
+    };
+    await updateAccount({
+      selfReportedAge: next.age,
+      ageConfirmedAt: next.confirmedAt,
+      ageLastChangedAt: next.lastChangedAt,
     });
+    setAgeInfo(next);
     return { ok: true };
   };
 

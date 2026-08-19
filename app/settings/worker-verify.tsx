@@ -20,8 +20,8 @@ export default function WorkerVerify() {
   const [cooldownUntil, setCooldownUntil] = useState<string | null>(null);
 
   if (ageInfo.age == null || changing) {
-    const handleSubmit = (age: number) => {
-      const result = setAge(age);
+    const handleSubmit = async (age: number) => {
+      const result = await setAge(age);
       if (!result.ok) {
         setCooldownUntil(result.availableOn);
         return;

@@ -80,7 +80,7 @@ export default function OnboardingAge() {
         </Text>
 
         <View className="mt-7">
-          <AgeSelector submitLabel="Continue" onSubmit={(age) => { worker.setAge(age); leave(); }} />
+          <AgeSelector submitLabel="Continue" onSubmit={async (age) => { await worker.setAge(age); leave(); }} />
         </View>
       </ScrollView>
     </View>

@@ -22,9 +22,16 @@ export type StoredAccount = {
   bio: string; // business owner "about" text; "" for clients
   plan: PlanId | null; // business owner subscription tier; null = none chosen yet
   billingCycle: BillingCycle;
+  // Self-reported age (worker only) — see AgeSelector. Not checked against an ID.
+  selfReportedAge: number | null;
+  ageConfirmedAt: string | null;
+  ageLastChangedAt: string | null;
 };
 
-export type SignUpInput = Omit<StoredAccount, "twoFactorEnabled"> & { password: string };
+export type SignUpInput = Omit<
+  StoredAccount,
+  "twoFactorEnabled" | "selfReportedAge" | "ageConfirmedAt" | "ageLastChangedAt"
+> & { password: string };
 
 type AuthResult = { ok: true } | { ok: false; error: string };
 type LogInResult = { ok: true; account: StoredAccount } | { ok: false; error: string };
@@ -60,6 +67,9 @@ type UserRow = {
   plan: string | null;
   billing_cycle: string | null;
   two_factor_enabled: boolean;
+  self_reported_age: number | null;
+  age_confirmed_at: string | null;
+  age_last_changed_at: string | null;
 };
 
 function rowToAccount(row: UserRow): StoredAccount {
@@ -81,6 +91,9 @@ function rowToAccount(row: UserRow): StoredAccount {
     bio: row.bio ?? "",
     plan: (row.plan as PlanId | null) ?? null,
     billingCycle: (row.billing_cycle as BillingCycle) ?? "monthly",
+    selfReportedAge: row.self_reported_age ?? null,
+    ageConfirmedAt: row.age_confirmed_at ?? null,
+    ageLastChangedAt: row.age_last_changed_at ?? null,
   };
 }
 
@@ -193,6 +206,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       bio: input.bio,
       plan: input.plan,
       billingCycle: input.billingCycle,
+      selfReportedAge: null,
+      ageConfirmedAt: null,
+      ageLastChangedAt: null,
     });
     return { ok: true };
   };
@@ -246,6 +262,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (patch.plan !== undefined) dbPatch.plan = patch.plan;
     if (patch.billingCycle !== undefined) dbPatch.billing_cycle = patch.billingCycle;
     if (patch.twoFactorEnabled !== undefined) dbPatch.two_factor_enabled = patch.twoFactorEnabled;
+    if (patch.selfReportedAge !== undefined) dbPatch.self_reported_age = patch.selfReportedAge;
+    if (patch.ageConfirmedAt !== undefined) dbPatch.age_confirmed_at = patch.ageConfirmedAt;
+    if (patch.ageLastChangedAt !== undefined) dbPatch.age_last_changed_at = patch.ageLastChangedAt;
 
     const { error } = await supabase.from("users").update(dbPatch).eq("id", userId);
     if (error) return;
