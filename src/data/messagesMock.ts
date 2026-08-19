@@ -18,6 +18,9 @@ export type ChatMessage = {
   offer?: JobOffer;
   edited?: boolean;
   deleted?: boolean;
+  // Raw ISO timestamp (real conversations only) — used to compute unread counts against the last
+  // time a conversation was opened; `time` above is the display string.
+  createdAt?: string;
 };
 
 export type ReportReason = "harassment" | "spam" | "inappropriate" | "scam" | "safety" | "other";
@@ -63,6 +66,11 @@ export type Conversation = {
   // (currently: client-initiated chats from Discover/provider). Its absence means this thread is
   // local-only session state, same as before.
   remote?: { counterpartId: string };
+  // The worker's listed price for the service the client came from, set once when the chat is
+  // created. Lets the client's in-chat "Request booking" fix the price to it (only the business
+  // owner chooses a price — HANDOFF §0.1) instead of offering a free-form amount.
+  listingPrice?: number;
+  listingPriceType?: PriceType;
 };
 
 // Fresh account — no conversations yet.

@@ -16,6 +16,7 @@ import {
 import { sanitizeMessage } from "../lib/sanitizeMessage";
 import { formatTime } from "../lib/datetime";
 import type { Role } from "./AppStateContext";
+import type { PriceType } from "../data/workerMock";
 
 type SendResult = { redacted: boolean };
 
@@ -27,6 +28,8 @@ type ConversationRow = {
   counterpart_first_name: string | null;
   counterpart_avatar_uri: string | null;
   job_context: string;
+  listing_price: number | null;
+  listing_price_type: PriceType | null;
   created_at: string;
 };
 
@@ -52,6 +55,7 @@ function rowToMessage(row: MessageRow, myId: string): ChatMessage {
     id: row.id,
     fromMe: row.sender_id === myId,
     time: formatTime(new Date(row.created_at)),
+    createdAt: row.created_at,
     kind: row.kind,
     text: row.text ?? undefined,
     offer:
@@ -78,7 +82,9 @@ type MessagesState = {
     counterpartAvatar: string,
     jobContext: string,
     counterpartRating?: number,
-    counterpartUserId?: string
+    counterpartUserId?: string,
+    listingPrice?: number,
+    listingPriceType?: PriceType
   ) => Promise<string>;
   refreshConversations: () => void;
   syncConversation: (conversationId: string) => void;
@@ -115,6 +121,10 @@ export function MessagesProvider({ children }: { children: ReactNode }) {
   const [reportStatuses, setReportStatuses] = useState<Record<string, ReportStatus>>({});
   // Standalone reports filed this session (e.g. group/member reports), shown in the admin console.
   const [filedReports, setFiledReports] = useState<PlatformReport[]>([]);
+  // When each real conversation was last opened (conversation id -> ISO time) — messages from the
+  // counterpart after this point count as unread. Session-local (no read-receipt column yet), so
+  // it resets on reload; that's an acceptable simplification at this stage.
+  const [lastReadAt, setLastReadAt] = useState<Record<string, string>>({});
   const idCounter = useRef(0);
   const { role } = useAppState();
   const { currentUser } = useAuth();
@@ -163,19 +173,26 @@ export function MessagesProvider({ children }: { children: ReactNode }) {
       list.push(rowToMessage(row, currentUser.id));
       messagesByConv.set(row.conversation_id, list);
     });
-    const fetched: Conversation[] = rows.map((row) => ({
-      id: row.id,
-      counterpartName: row.counterpart_business_name || row.counterpart_first_name || "SideKick user",
-      counterpartAvatar: row.counterpart_avatar_uri ?? "",
-      counterpartRating: 0,
-      jobContext: row.job_context,
-      messages: messagesByConv.get(row.id) ?? [],
-      unread: 0,
-      reported: false,
-      reportReason: null,
-      blocked: false,
-      remote: { counterpartId: row.counterpart_id },
-    }));
+    const fetched: Conversation[] = rows.map((row) => {
+      const msgs = messagesByConv.get(row.id) ?? [];
+      const readAt = lastReadAt[row.id];
+      const unread = msgs.filter((m) => !m.fromMe && (!readAt || (m.createdAt && m.createdAt > readAt))).length;
+      return {
+        id: row.id,
+        counterpartName: row.counterpart_business_name || row.counterpart_first_name || "SideKick user",
+        counterpartAvatar: row.counterpart_avatar_uri ?? "",
+        counterpartRating: 0,
+        jobContext: row.job_context,
+        messages: msgs,
+        unread,
+        reported: false,
+        reportReason: null,
+        blocked: false,
+        remote: { counterpartId: row.counterpart_id },
+        listingPrice: row.listing_price ?? undefined,
+        listingPriceType: row.listing_price_type ?? undefined,
+      };
+    });
     setByRole((prev) => ({ ...prev, [activeRole]: [...fetched, ...prev[activeRole].filter((c) => !c.remote)] }));
   };
 
@@ -222,7 +239,9 @@ export function MessagesProvider({ children }: { children: ReactNode }) {
     counterpartAvatar: string,
     jobContext: string,
     counterpartRating = 5,
-    counterpartUserId?: string
+    counterpartUserId?: string,
+    listingPrice?: number,
+    listingPriceType?: PriceType
   ): Promise<string> => {
     if (counterpartUserId && currentUser) {
       const existingRemote = conversations.find((c) => c.remote?.counterpartId === counterpartUserId);
@@ -231,6 +250,8 @@ export function MessagesProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase.rpc("start_conversation", {
         target_worker_id: counterpartUserId,
         initial_job_context: jobContext,
+        initial_price: listingPrice ?? null,
+        initial_price_type: listingPriceType ?? null,
       });
       if (error || !data) {
         console.error("[start_conversation] failed:", error?.message);
@@ -254,6 +275,8 @@ export function MessagesProvider({ children }: { children: ReactNode }) {
           reportReason: null,
           blocked: false,
           remote: { counterpartId: counterpartUserId },
+          listingPrice,
+          listingPriceType,
         };
         setByRole((prev) => ({ ...prev, [activeRole]: [conversation, ...prev[activeRole].filter((c) => c.id !== id)] }));
         return id;
@@ -279,8 +302,10 @@ export function MessagesProvider({ children }: { children: ReactNode }) {
     return id;
   };
 
-  const markConversationRead = (conversationId: string) =>
+  const markConversationRead = (conversationId: string) => {
     updateConversations((list) => list.map((c) => (c.id === conversationId ? { ...c, unread: 0 } : c)));
+    setLastReadAt((prev) => ({ ...prev, [conversationId]: new Date().toISOString() }));
+  };
 
   const totalUnread = conversations.reduce((sum, c) => sum + c.unread, 0);
 

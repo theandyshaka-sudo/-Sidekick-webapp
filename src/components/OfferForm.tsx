@@ -28,6 +28,7 @@ export function OfferForm({
   initialService,
   initialDayOffset = 0,
   submitLabel = "Send offer",
+  lockedPrice,
   onClose,
   onSubmit,
 }: {
@@ -36,14 +37,17 @@ export function OfferForm({
   initialService?: string;
   initialDayOffset?: number;
   submitLabel?: string;
+  // When set, the price is fixed (shown read-only) instead of editable — only the business owner
+  // sets a price (HANDOFF §0.1); a client requesting at a worker's already-listed price uses this.
+  lockedPrice?: { amount: number; priceType: PriceType };
   onClose: () => void;
   onSubmit: (draft: OfferDraft) => void;
 }) {
   const palette = useRolePalette();
   const themeVars = useThemeVars();
   const [service, setService] = useState(initialService ?? "");
-  const [amount, setAmount] = useState("");
-  const [priceType, setPriceType] = useState<PriceType>("job");
+  const [amount, setAmount] = useState(lockedPrice ? String(lockedPrice.amount) : "");
+  const [priceType, setPriceType] = useState<PriceType>(lockedPrice?.priceType ?? "job");
   const [dayOffset, setDayOffset] = useState(initialDayOffset);
   const [hour, setHour] = useState(15);
 
@@ -62,15 +66,16 @@ export function OfferForm({
   }, [visible]);
 
   const submit = () => {
-    const price = Number(amount.replace(/[^0-9]/g, ""));
+    const price = lockedPrice ? lockedPrice.amount : Number(amount.replace(/[^0-9]/g, ""));
+    const type = lockedPrice ? lockedPrice.priceType : priceType;
     if (!service.trim() || !price) return;
     const d = new Date();
     d.setDate(d.getDate() + dayOffset);
     d.setHours(hour, 0, 0, 0);
-    onSubmit({ service: service.trim(), price, priceType, scheduledAt: d.toISOString() });
+    onSubmit({ service: service.trim(), price, priceType: type, scheduledAt: d.toISOString() });
     setService(initialService ?? "");
-    setAmount("");
-    setPriceType("job");
+    setAmount(lockedPrice ? String(lockedPrice.amount) : "");
+    setPriceType(lockedPrice?.priceType ?? "job");
     setDayOffset(0);
     setHour(15);
   };
@@ -101,36 +106,46 @@ export function OfferForm({
             />
 
             <Text className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">Price</Text>
-            <View className="mb-4 flex-row items-center gap-2">
-              <View className="flex-1 flex-row items-center gap-2 rounded-2xl border border-border bg-bg px-4 py-3">
-                <Text className="text-base text-muted">$</Text>
-                <TextInput
-                  value={amount}
-                  onChangeText={setAmount}
-                  placeholder="Amount"
-                  placeholderTextColor={palette.muted}
-                  keyboardType="number-pad"
-                  className="flex-1 text-base text-text"
-                />
+            {lockedPrice ? (
+              <View className="mb-4 flex-row items-center gap-2 rounded-2xl border border-border bg-bg px-4 py-3">
+                <Ionicons name="lock-closed-outline" size={14} color={palette.muted} />
+                <Text className="text-base font-semibold text-text">
+                  ${lockedPrice.amount} {lockedPrice.priceType === "job" ? "per job" : "per hour"}
+                </Text>
+                <Text className="ml-auto text-xs text-muted">Set by the business owner</Text>
               </View>
-              <View className="flex-row rounded-xl border border-border bg-bg p-0.5">
-                {(["job", "hour"] as PriceType[]).map((t) => {
-                  const selected = priceType === t;
-                  return (
-                    <Pressable
-                      key={t}
-                      onPress={() => setPriceType(t)}
-                      className="rounded-lg px-3 py-1.5"
-                      style={{ backgroundColor: selected ? palette.primary : "transparent" }}
-                    >
-                      <Text className="text-xs font-semibold" style={{ color: selected ? palette.primaryFg : palette.muted }}>
-                        {t === "job" ? "Per job" : "Per hour"}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
+            ) : (
+              <View className="mb-4 flex-row items-center gap-2">
+                <View className="flex-1 flex-row items-center gap-2 rounded-2xl border border-border bg-bg px-4 py-3">
+                  <Text className="text-base text-muted">$</Text>
+                  <TextInput
+                    value={amount}
+                    onChangeText={setAmount}
+                    placeholder="Amount"
+                    placeholderTextColor={palette.muted}
+                    keyboardType="number-pad"
+                    className="flex-1 text-base text-text"
+                  />
+                </View>
+                <View className="flex-row rounded-xl border border-border bg-bg p-0.5">
+                  {(["job", "hour"] as PriceType[]).map((t) => {
+                    const selected = priceType === t;
+                    return (
+                      <Pressable
+                        key={t}
+                        onPress={() => setPriceType(t)}
+                        className="rounded-lg px-3 py-1.5"
+                        style={{ backgroundColor: selected ? palette.primary : "transparent" }}
+                      >
+                        <Text className="text-xs font-semibold" style={{ color: selected ? palette.primaryFg : palette.muted }}>
+                          {t === "job" ? "Per job" : "Per hour"}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
               </View>
-            </View>
+            )}
 
             <Text className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">Date</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4" contentContainerStyle={{ gap: 8 }}>

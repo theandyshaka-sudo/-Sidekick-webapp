@@ -36,7 +36,8 @@ export default function ProviderDetail() {
   const alreadyRequested = jobs.some((j) => j.status !== "declined" && j.counterpartName === worker.name);
 
   const message = async () => {
-    const convId = await ensureConversation(worker.name, worker.avatarUri, worker.category, worker.rating, worker.workerId);
+    const { price, priceType } = parsePrice(worker.priceLabel);
+    const convId = await ensureConversation(worker.name, worker.avatarUri, worker.category, worker.rating, worker.workerId, price, priceType);
     router.push(`/chat/${convId}`);
   };
 

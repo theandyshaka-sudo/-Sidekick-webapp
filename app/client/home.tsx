@@ -139,7 +139,7 @@ export default function ClientDiscover() {
       price,
       priceType,
     });
-    const convId = await ensureConversation(worker.name, worker.avatarUri, worker.category, worker.rating, worker.workerId);
+    const convId = await ensureConversation(worker.name, worker.avatarUri, worker.category, worker.rating, worker.workerId, price, priceType);
     router.push(`/chat/${convId}`);
   };
 

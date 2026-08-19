@@ -125,6 +125,10 @@ export function ChatThread() {
       }))
     : [];
 
+  // A client can request a booking from within the chat too, fixed to the worker's listed price
+  // (HANDOFF §0.1) — available when this chat came from a real listing (Discover/provider).
+  const canRequestBooking = role !== "worker" && conversation?.listingPrice != null && conversation?.listingPriceType != null;
+
   if (!conversation) {
     return (
       <View className="flex-1 items-center justify-center bg-bg">
@@ -273,6 +277,13 @@ export function ChatThread() {
             >
               <Ionicons name={canSendOffer ? "add" : "lock-closed"} size={canSendOffer ? 22 : 18} color={palette.primary} />
             </Pressable>
+          ) : canRequestBooking ? (
+            <Pressable
+              onPress={() => setOfferOpen(true)}
+              className="h-11 w-11 items-center justify-center rounded-full border border-border active:opacity-70"
+            >
+              <Ionicons name="add" size={22} color={palette.primary} />
+            </Pressable>
           ) : null}
           <TextInput
             value={draft}
@@ -307,8 +318,14 @@ export function ChatThread() {
       />
       <OfferForm
         visible={offerOpen}
-        title="Send a job offer"
+        title={role === "worker" ? "Send a job offer" : "Request this booking"}
+        submitLabel={role === "worker" ? "Send offer" : "Send request"}
         initialService={conversation.jobContext}
+        lockedPrice={
+          role !== "worker" && conversation.listingPrice != null && conversation.listingPriceType != null
+            ? { amount: conversation.listingPrice, priceType: conversation.listingPriceType }
+            : undefined
+        }
         onClose={() => setOfferOpen(false)}
         onSubmit={(draftOffer) => {
           sendOffer(conversation.id, draftOffer);
