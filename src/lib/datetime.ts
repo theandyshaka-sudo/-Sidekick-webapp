@@ -9,7 +9,7 @@ function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-function formatTime(d: Date): string {
+export function formatTime(d: Date): string {
   let hours = d.getHours();
   const minutes = d.getMinutes();
   const ampm = hours >= 12 ? "PM" : "AM";

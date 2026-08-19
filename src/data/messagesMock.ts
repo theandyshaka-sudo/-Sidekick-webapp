@@ -59,6 +59,10 @@ export type Conversation = {
   reported: boolean;
   reportReason: ReportReason | null;
   blocked: boolean;
+  // Present only for a conversation backed by the real `conversations`/`messages` tables
+  // (currently: client-initiated chats from Discover/provider). Its absence means this thread is
+  // local-only session state, same as before.
+  remote?: { counterpartId: string };
 };
 
 // Fresh account — no conversations yet.

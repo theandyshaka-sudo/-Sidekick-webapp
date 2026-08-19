@@ -58,6 +58,7 @@ type DiscoverRow = {
 function rowToNearbyWorker(row: DiscoverRow): NearbyWorker {
   return {
     id: row.service_id,
+    workerId: row.worker_id,
     name: row.worker_first_name ?? "",
     businessName: row.business_name || row.worker_first_name || "Business owner",
     avatarUri: row.avatar_uri ?? "",

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -11,7 +12,13 @@ export function MessagesList() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const palette = useRolePalette();
-  const { conversations } = useMessages();
+  const { conversations, refreshConversations } = useMessages();
+
+  // Pulls any conversation started by the other side since we last fetched (e.g. login) —
+  // opening the Messages tab always shows the current state.
+  useEffect(() => {
+    refreshConversations();
+  }, []);
 
   return (
     <ScrollView

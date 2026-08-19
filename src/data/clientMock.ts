@@ -28,6 +28,7 @@ export const categories: Category[] = CATALOG_CATEGORY_ORDER.map((title) => ({
 
 export type NearbyWorker = {
   id: string;
+  workerId: string; // the worker's real account id — needed to start a real conversation
   name: string;
   businessName: string;
   avatarUri: string;

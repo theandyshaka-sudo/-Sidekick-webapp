@@ -23,8 +23,8 @@ function BookingCard({ job }: { job: Job }) {
   const [pendingRating, setPendingRating] = useState(0);
   const [reviewText, setReviewText] = useState("");
 
-  const openChat = () => {
-    const id = ensureConversation(job.counterpartName, job.counterpartAvatar, job.service);
+  const openChat = async () => {
+    const id = await ensureConversation(job.counterpartName, job.counterpartAvatar, job.service);
     router.push(`/chat/${id}`);
   };
 

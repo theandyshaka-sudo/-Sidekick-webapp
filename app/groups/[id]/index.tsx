@@ -55,8 +55,8 @@ export default function GroupDetail() {
       opts.push({ label: "Kick from group", icon: "exit-outline", destructive: true, onPress: () => g.kickMember(group.id, memberMenu.userId) });
     if (actionable && g.can(group, "ban"))
       opts.push({ label: "Ban from group", icon: "ban-outline", destructive: true, onPress: () => g.banMember(group.id, memberMenu.userId) });
-    opts.push({ label: "Message", icon: "chatbubble-outline", onPress: () => {
-      const cid = ensureConversation(memberMenu.name, memberMenu.avatarUri, `Group: ${group.name}`);
+    opts.push({ label: "Message", icon: "chatbubble-outline", onPress: async () => {
+      const cid = await ensureConversation(memberMenu.name, memberMenu.avatarUri, `Group: ${group.name}`);
       router.push(`/chat/${cid}`);
     } });
     opts.push({ label: "Report to SideKick", icon: "flag-outline", destructive: true, onPress: () => setReportFor(memberMenu) });

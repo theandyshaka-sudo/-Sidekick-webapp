@@ -130,7 +130,7 @@ export default function ClientDiscover() {
     onPress: () => setSort(key),
   }));
 
-  const handleRequest = (worker: NearbyWorker) => {
+  const handleRequest = async (worker: NearbyWorker) => {
     const { price, priceType } = parsePrice(worker.priceLabel);
     requestJob({
       service: worker.category,
@@ -139,7 +139,7 @@ export default function ClientDiscover() {
       price,
       priceType,
     });
-    const convId = ensureConversation(worker.name, worker.avatarUri, worker.category, worker.rating);
+    const convId = await ensureConversation(worker.name, worker.avatarUri, worker.category, worker.rating, worker.workerId);
     router.push(`/chat/${convId}`);
   };
 

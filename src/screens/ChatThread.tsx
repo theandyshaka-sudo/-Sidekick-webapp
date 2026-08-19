@@ -38,16 +38,24 @@ export function ChatThread() {
     setBlocked,
     banStatus,
     markConversationRead,
+    syncConversation,
   } = useMessages();
   const { scheduleFromOffer } = useJobs();
   const { role } = useAppState();
   const { ageInfo } = useWorkerData();
   // A worker must have an age on file before sending or accepting job offers (scheduling).
   const canSchedule = role !== "worker" || ageInfo.age != null;
+  // Only the business owner sets the price (HANDOFF §0.1) — a client can't open the price/offer
+  // sheet at all.
+  const canSendOffer = role === "worker" && canSchedule;
 
-  // Opening a chat clears its unread badge.
+  // Opening a chat clears its unread badge and, for a real conversation, pulls anything the other
+  // side sent since our last fetch (no live push yet — this is fetch-on-open).
   useEffect(() => {
-    if (id) markConversationRead(id);
+    if (id) {
+      markConversationRead(id);
+      syncConversation(id);
+    }
   }, [id]);
 
   const [draft, setDraft] = useState("");
@@ -258,12 +266,14 @@ export function ChatThread() {
         </View>
       ) : (
         <View className="flex-row items-end gap-2 border-t border-border bg-bg px-4 pt-3" style={{ paddingBottom: insets.bottom + 12 }}>
-          <Pressable
-            onPress={() => (canSchedule ? setOfferOpen(true) : router.push("/settings/worker-verify"))}
-            className="h-11 w-11 items-center justify-center rounded-full border border-border active:opacity-70"
-          >
-            <Ionicons name={canSchedule ? "add" : "lock-closed"} size={canSchedule ? 22 : 18} color={palette.primary} />
-          </Pressable>
+          {role === "worker" ? (
+            <Pressable
+              onPress={() => (canSendOffer ? setOfferOpen(true) : router.push("/settings/worker-verify"))}
+              className="h-11 w-11 items-center justify-center rounded-full border border-border active:opacity-70"
+            >
+              <Ionicons name={canSendOffer ? "add" : "lock-closed"} size={canSendOffer ? 22 : 18} color={palette.primary} />
+            </Pressable>
+          ) : null}
           <TextInput
             value={draft}
             onChangeText={setDraft}

@@ -163,8 +163,8 @@ export default function WorkerJobs() {
       })
     : [];
 
-  const messageCounterpart = (job: Job) => {
-    const id = ensureConversation(job.counterpartName, job.counterpartAvatar, job.service);
+  const messageCounterpart = async (job: Job) => {
+    const id = await ensureConversation(job.counterpartName, job.counterpartAvatar, job.service);
     router.push(`/chat/${id}`);
   };
 
@@ -308,9 +308,9 @@ export default function WorkerJobs() {
         title="Propose a time"
         initialService={offerFor?.service}
         onClose={() => setOfferFor(null)}
-        onSubmit={(draft) => {
+        onSubmit={async (draft) => {
           if (!offerFor) return;
-          const convId = ensureConversation(offerFor.counterpartName, offerFor.counterpartAvatar, draft.service);
+          const convId = await ensureConversation(offerFor.counterpartName, offerFor.counterpartAvatar, draft.service);
           sendOffer(convId, draft);
           setOfferFor(null);
           router.push(`/chat/${convId}`);
