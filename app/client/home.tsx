@@ -12,7 +12,7 @@ import { useClientData } from "../../src/context/ClientDataContext";
 import { useJobs } from "../../src/context/JobsContext";
 import { useMessages } from "../../src/context/MessagesContext";
 import { useThemeVars } from "../../src/theme/useThemeVars";
-import { categories, nearbyWorkers, type NearbyWorker } from "../../src/data/clientMock";
+import { categories, type NearbyWorker } from "../../src/data/clientMock";
 import type { PriceType } from "../../src/data/workerMock";
 
 function LocationModal({
@@ -93,7 +93,7 @@ export default function ClientDiscover() {
   const insets = useSafeAreaInsets();
   const palette = useRolePalette();
   const router = useRouter();
-  const { profile, location, updateLocation } = useClientData();
+  const { profile, location, updateLocation, nearbyWorkers } = useClientData();
   const { jobs, requestJob } = useJobs();
   const { ensureConversation } = useMessages();
   const [query, setQuery] = useState("");

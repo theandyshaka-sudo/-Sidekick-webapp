@@ -1,5 +1,6 @@
-// Category chips shown on Discover. `nearbyWorkers` is empty on a fresh account — real listings
-// arrive once M1/M2 (auth, listings) land.
+// Category chips shown on Discover — derived from the same catalog workers pick services from
+// (serviceCatalog.ts), so a chip always matches at least one real listing category.
+import { CATALOG_CATEGORY_ORDER } from "./serviceCatalog";
 
 export type Category = {
   id: string;
@@ -7,14 +8,23 @@ export type Category = {
   icon: string;
 };
 
-export const categories: Category[] = [
-  { id: "yard", title: "Yard work", icon: "leaf-outline" },
-  { id: "cleaning", title: "Cleaning", icon: "sparkles-outline" },
-  { id: "moving", title: "Moving help", icon: "cube-outline" },
-  { id: "petcare", title: "Pet care", icon: "paw-outline" },
-  { id: "tutoring", title: "Tutoring", icon: "book-outline" },
-  { id: "errands", title: "Errands", icon: "bicycle-outline" },
-];
+const CATEGORY_ICONS: Record<string, string> = {
+  "Cleaning": "sparkles-outline",
+  "Yard & outdoor": "leaf-outline",
+  "Pets": "paw-outline",
+  "Kids & tutoring": "book-outline",
+  "Tech & creative": "laptop-outline",
+  "Errands & delivery": "bicycle-outline",
+  "Moving & hauling": "cube-outline",
+  "Car care": "car-outline",
+  "Events & misc": "gift-outline",
+};
+
+export const categories: Category[] = CATALOG_CATEGORY_ORDER.map((title) => ({
+  id: title,
+  title,
+  icon: CATEGORY_ICONS[title] ?? "ellipsis-horizontal-outline",
+}));
 
 export type NearbyWorker = {
   id: string;
@@ -32,9 +42,6 @@ export type NearbyWorker = {
   bio: string;
   reviews: Array<{ author: string; stars: number; text: string }>;
 };
-
-// Fresh account — no business owners listed nearby yet.
-export const nearbyWorkers: NearbyWorker[] = [];
 
 // The signed-in client — blank until they fill in their profile.
 export const clientProfile = {

@@ -8,7 +8,7 @@ import { ReviewCard } from "../../src/components/ReviewCard";
 import { useRolePalette } from "../../src/theme/useRolePalette";
 import { useJobs } from "../../src/context/JobsContext";
 import { useMessages } from "../../src/context/MessagesContext";
-import { nearbyWorkers } from "../../src/data/clientMock";
+import { useClientData } from "../../src/context/ClientDataContext";
 import type { PriceType } from "../../src/data/workerMock";
 
 function parsePrice(label: string): { price: number; priceType: PriceType } {
@@ -22,6 +22,7 @@ export default function ProviderDetail() {
   const palette = useRolePalette();
   const { jobs, requestJob } = useJobs();
   const { ensureConversation } = useMessages();
+  const { nearbyWorkers } = useClientData();
 
   const worker = nearbyWorkers.find((w) => w.id === id);
   if (!worker) {
