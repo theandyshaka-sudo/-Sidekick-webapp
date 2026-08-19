@@ -6,6 +6,7 @@ import type { PlanId, BillingCycle } from "../data/plans";
 // Backed by Supabase Auth (auth.users) + the `users` table. The password never lives here —
 // Supabase Auth hashes and stores it server-side.
 export type StoredAccount = {
+  id: string;
   role: Role;
   firstName: string;
   lastName: string; // "" for business owners (checklist collects first name only)
@@ -30,7 +31,7 @@ export type StoredAccount = {
 
 export type SignUpInput = Omit<
   StoredAccount,
-  "twoFactorEnabled" | "selfReportedAge" | "ageConfirmedAt" | "ageLastChangedAt"
+  "id" | "twoFactorEnabled" | "selfReportedAge" | "ageConfirmedAt" | "ageLastChangedAt"
 > & { password: string };
 
 type AuthResult = { ok: true } | { ok: false; error: string };
@@ -52,6 +53,7 @@ const AuthContext = createContext<AuthState | null>(null);
 
 // Shape of a row from the `users` table (snake_case, as Postgres returns it).
 type UserRow = {
+  id: string;
   role: Role;
   email: string | null;
   first_name: string | null;
@@ -74,6 +76,7 @@ type UserRow = {
 
 function rowToAccount(row: UserRow): StoredAccount {
   return {
+    id: row.id,
     role: row.role,
     firstName: row.first_name ?? "",
     lastName: row.last_name ?? "",
@@ -190,6 +193,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     setCurrentUser({
+      id: userId,
       role: input.role,
       firstName: input.firstName,
       lastName: input.lastName,

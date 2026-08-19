@@ -1,11 +1,18 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useAuth } from "./AuthContext";
+import { supabase } from "../lib/supabase";
 import { ageFromDob } from "../data/categoriesConfig";
-import {
-  workerProfile as seedProfile,
-  workerServices as seedServices,
-  type PriceType,
-} from "../data/workerMock";
+import { workerProfile as seedProfile, type PriceType } from "../data/workerMock";
+
+// Client-generated so a new service can be added to local state immediately (optimistic) and
+// persisted to Supabase under the same id, with no round trip needed before it's usable.
+function generateId(): string {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 export type WorkerServiceItem = {
   id: string;
@@ -75,6 +82,33 @@ type WorkerDataState = {
   setAge: (age: number) => Promise<SetAgeResult>;
 };
 
+// Shape of a row from the `worker_services` table (snake_case, as Postgres returns it).
+type ServiceRow = {
+  id: string;
+  title: string;
+  price_type: PriceType;
+  price_amount: number;
+  avail_from: number;
+  avail_to: number;
+  days: number[];
+  photo_uri: string;
+  active: boolean;
+};
+
+function rowToService(row: ServiceRow): WorkerServiceItem {
+  return {
+    id: row.id,
+    title: row.title,
+    priceType: row.price_type,
+    priceAmount: row.price_amount,
+    availFrom: row.avail_from,
+    availTo: row.avail_to,
+    days: row.days,
+    photoUri: row.photo_uri,
+    active: row.active,
+  };
+}
+
 const WorkerDataContext = createContext<WorkerDataState | null>(null);
 
 export function WorkerDataProvider({ children }: { children: ReactNode }) {
@@ -84,9 +118,7 @@ export function WorkerDataProvider({ children }: { children: ReactNode }) {
     bio: "",
     avatarUri: seedProfile.avatarUri,
   });
-  const [services, setServices] = useState<WorkerServiceItem[]>(
-    seedServices.map((service) => ({ ...service, active: true }))
-  );
+  const [services, setServices] = useState<WorkerServiceItem[]>([]);
   const [notificationPrefs, setNotificationPrefs] = useState<WorkerNotificationPrefs>({
     newRequests: true,
     messages: true,
@@ -103,7 +135,6 @@ export function WorkerDataProvider({ children }: { children: ReactNode }) {
     confirmedAt: null,
     lastChangedAt: null,
   });
-  const serviceIdCounter = useRef(seedServices.length);
   const { currentUser, updateAccount } = useAuth();
 
   // Rehydrate the in-memory profile/age from the signed-in account (on boot, login, logout). Keyed
@@ -122,9 +153,18 @@ export function WorkerDataProvider({ children }: { children: ReactNode }) {
         confirmedAt: currentUser.ageConfirmedAt,
         lastChangedAt: currentUser.ageLastChangedAt,
       });
+      supabase
+        .from("worker_services")
+        .select("*")
+        .eq("worker_id", currentUser.id)
+        .order("created_at", { ascending: true })
+        .then(({ data }) => {
+          if (data) setServices(data.map(rowToService));
+        });
     } else if (!currentUser) {
       setProfile({ displayName: "", businessName: "", bio: "", avatarUri: "" });
       setAgeInfo({ age: null, confirmedAt: null, lastChangedAt: null });
+      setServices([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.username]);
@@ -132,15 +172,44 @@ export function WorkerDataProvider({ children }: { children: ReactNode }) {
   const updateProfile = (patch: Partial<WorkerProfileFields>) =>
     setProfile((prev) => ({ ...prev, ...patch }));
 
+  // Optimistic + fire-and-forget: local state updates immediately (so typing a price or toggling
+  // a switch feels instant), the Supabase write happens in the background under the same id.
   const addService = (service: Omit<WorkerServiceItem, "id">) => {
-    serviceIdCounter.current += 1;
-    setServices((prev) => [...prev, { ...service, id: `svc-new-${serviceIdCounter.current}` }]);
+    const id = generateId();
+    setServices((prev) => [...prev, { ...service, id }]);
+    if (!currentUser) return;
+    supabase.from("worker_services").insert({
+      id,
+      worker_id: currentUser.id,
+      title: service.title,
+      price_type: service.priceType,
+      price_amount: service.priceAmount,
+      avail_from: service.availFrom,
+      avail_to: service.availTo,
+      days: service.days,
+      photo_uri: service.photoUri,
+      active: service.active,
+    });
   };
 
-  const updateService = (id: string, patch: Partial<WorkerServiceItem>) =>
+  const updateService = (id: string, patch: Partial<WorkerServiceItem>) => {
     setServices((prev) => prev.map((service) => (service.id === id ? { ...service, ...patch } : service)));
+    const dbPatch: Record<string, unknown> = {};
+    if (patch.title !== undefined) dbPatch.title = patch.title;
+    if (patch.priceType !== undefined) dbPatch.price_type = patch.priceType;
+    if (patch.priceAmount !== undefined) dbPatch.price_amount = patch.priceAmount;
+    if (patch.availFrom !== undefined) dbPatch.avail_from = patch.availFrom;
+    if (patch.availTo !== undefined) dbPatch.avail_to = patch.availTo;
+    if (patch.days !== undefined) dbPatch.days = patch.days;
+    if (patch.photoUri !== undefined) dbPatch.photo_uri = patch.photoUri;
+    if (patch.active !== undefined) dbPatch.active = patch.active;
+    if (Object.keys(dbPatch).length > 0) supabase.from("worker_services").update(dbPatch).eq("id", id);
+  };
 
-  const removeService = (id: string) => setServices((prev) => prev.filter((service) => service.id !== id));
+  const removeService = (id: string) => {
+    setServices((prev) => prev.filter((service) => service.id !== id));
+    supabase.from("worker_services").delete().eq("id", id);
+  };
 
   const updateNotificationPrefs = (patch: Partial<WorkerNotificationPrefs>) =>
     setNotificationPrefs((prev) => ({ ...prev, ...patch }));
