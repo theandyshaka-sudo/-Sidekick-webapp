@@ -158,7 +158,8 @@ export function WorkerDataProvider({ children }: { children: ReactNode }) {
         .select("*")
         .eq("worker_id", currentUser.id)
         .order("created_at", { ascending: true })
-        .then(({ data }) => {
+        .then(({ data, error }) => {
+          if (error) console.error("[worker_services] fetch failed:", error.message);
           if (data) setServices(data.map(rowToService));
         });
     } else if (!currentUser) {
@@ -178,18 +179,23 @@ export function WorkerDataProvider({ children }: { children: ReactNode }) {
     const id = generateId();
     setServices((prev) => [...prev, { ...service, id }]);
     if (!currentUser) return;
-    supabase.from("worker_services").insert({
-      id,
-      worker_id: currentUser.id,
-      title: service.title,
-      price_type: service.priceType,
-      price_amount: service.priceAmount,
-      avail_from: service.availFrom,
-      avail_to: service.availTo,
-      days: service.days,
-      photo_uri: service.photoUri,
-      active: service.active,
-    });
+    supabase
+      .from("worker_services")
+      .insert({
+        id,
+        worker_id: currentUser.id,
+        title: service.title,
+        price_type: service.priceType,
+        price_amount: service.priceAmount,
+        avail_from: service.availFrom,
+        avail_to: service.availTo,
+        days: service.days,
+        photo_uri: service.photoUri,
+        active: service.active,
+      })
+      .then(({ error }) => {
+        if (error) console.error("[worker_services] insert failed:", error.message);
+      });
   };
 
   const updateService = (id: string, patch: Partial<WorkerServiceItem>) => {
@@ -203,12 +209,26 @@ export function WorkerDataProvider({ children }: { children: ReactNode }) {
     if (patch.days !== undefined) dbPatch.days = patch.days;
     if (patch.photoUri !== undefined) dbPatch.photo_uri = patch.photoUri;
     if (patch.active !== undefined) dbPatch.active = patch.active;
-    if (Object.keys(dbPatch).length > 0) supabase.from("worker_services").update(dbPatch).eq("id", id);
+    if (Object.keys(dbPatch).length > 0) {
+      supabase
+        .from("worker_services")
+        .update(dbPatch)
+        .eq("id", id)
+        .then(({ error }) => {
+          if (error) console.error("[worker_services] update failed:", error.message);
+        });
+    }
   };
 
   const removeService = (id: string) => {
     setServices((prev) => prev.filter((service) => service.id !== id));
-    supabase.from("worker_services").delete().eq("id", id);
+    supabase
+      .from("worker_services")
+      .delete()
+      .eq("id", id)
+      .then(({ error }) => {
+        if (error) console.error("[worker_services] delete failed:", error.message);
+      });
   };
 
   const updateNotificationPrefs = (patch: Partial<WorkerNotificationPrefs>) =>

@@ -26,9 +26,8 @@ export default function WorkerHome() {
   const router = useRouter();
   const palette = useRolePalette();
   const insets = useSafeAreaInsets();
-  const { profile, services } = useWorkerData();
+  const { profile, services, updateService } = useWorkerData();
   const { earnings, rating, upcoming, requests, completed, streakWeeks } = useJobs();
-  const activeServices = services.filter((service) => service.active);
   const nextJobs = upcoming.slice(0, 3);
 
   return (
@@ -146,12 +145,14 @@ export default function WorkerHome() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 24, gap: 12 }}
         >
-          {activeServices.map((service) => (
+          {services.map((service) => (
             <ServiceChip
               key={service.id}
               title={service.title}
               priceLabel={formatServicePrice(service.priceType, service.priceAmount)}
               photoUri={service.photoUri}
+              active={service.active}
+              onToggleActive={(active) => updateService(service.id, { active })}
             />
           ))}
           <Pressable
