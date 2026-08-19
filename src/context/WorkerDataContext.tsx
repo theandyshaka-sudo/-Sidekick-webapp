@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "./AuthContext";
+import { ageFromDob } from "../data/categoriesConfig";
 import {
   workerProfile as seedProfile,
   workerServices as seedServices,
@@ -54,7 +55,10 @@ export type AgeInfo = {
   lastChangedAt: string | null;
 };
 
-export type SetAgeResult = { ok: true } | { ok: false; availableOn: string };
+export type SetAgeResult =
+  | { ok: true }
+  | { ok: false; reason: "cooldown"; availableOn: string }
+  | { ok: false; reason: "mismatch"; expectedAge: number };
 
 type WorkerDataState = {
   profile: WorkerProfileFields;
@@ -148,11 +152,17 @@ export function WorkerDataProvider({ children }: { children: ReactNode }) {
   // immediately so age can't be flipped back and forth to dodge category gating). Persisted to
   // the `users` row so the cooldown survives an app restart.
   const setAge = async (age: number): Promise<SetAgeResult> => {
+    // Cross-check against the birthday given at signup — still self-reported (no ID), but this
+    // catches an honest slip or an obvious lie against the one other data point we already have.
+    if (currentUser?.dobIso) {
+      const expectedAge = ageFromDob(currentUser.dobIso);
+      if (age !== expectedAge) return { ok: false, reason: "mismatch", expectedAge };
+    }
     const now = new Date();
     if (ageInfo.lastChangedAt) {
       const availableOn = new Date(ageInfo.lastChangedAt);
       availableOn.setMonth(availableOn.getMonth() + 1);
-      if (now < availableOn) return { ok: false, availableOn: availableOn.toISOString() };
+      if (now < availableOn) return { ok: false, reason: "cooldown", availableOn: availableOn.toISOString() };
     }
     const next: AgeInfo = {
       age,

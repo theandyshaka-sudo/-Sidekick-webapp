@@ -18,15 +18,18 @@ export default function WorkerVerify() {
   const { ageInfo, setAge } = useWorkerData();
   const [changing, setChanging] = useState(false);
   const [cooldownUntil, setCooldownUntil] = useState<string | null>(null);
+  const [mismatch, setMismatch] = useState(false);
 
   if (ageInfo.age == null || changing) {
     const handleSubmit = async (age: number) => {
       const result = await setAge(age);
       if (!result.ok) {
-        setCooldownUntil(result.availableOn);
+        setCooldownUntil(result.reason === "cooldown" ? result.availableOn : null);
+        setMismatch(result.reason === "mismatch");
         return;
       }
       setCooldownUntil(null);
+      setMismatch(false);
       setChanging(false);
     };
 
@@ -42,6 +45,14 @@ export default function WorkerVerify() {
               </Text>
             </View>
           ) : null}
+          {mismatch ? (
+            <View className="mb-5 flex-row items-center gap-2 rounded-2xl border p-3" style={{ borderColor: palette.danger, backgroundColor: palette.danger + "11" }}>
+              <Ionicons name="alert-circle-outline" size={16} color={palette.danger} />
+              <Text className="flex-1 text-xs" style={{ color: palette.danger }}>
+                That doesn't match the birthday you signed up with. Double-check the age you picked.
+              </Text>
+            </View>
+          ) : null}
           <AgeSelector
             initialAge={ageInfo.age}
             submitLabel={ageInfo.age == null ? "Continue" : "Save"}
@@ -49,7 +60,7 @@ export default function WorkerVerify() {
           />
           {ageInfo.age != null ? (
             <View className="mt-3">
-              <PrimaryButton label="Cancel" variant="outline" onPress={() => { setChanging(false); setCooldownUntil(null); }} />
+              <PrimaryButton label="Cancel" variant="outline" onPress={() => { setChanging(false); setCooldownUntil(null); setMismatch(false); }} />
             </View>
           ) : null}
         </ScrollView>

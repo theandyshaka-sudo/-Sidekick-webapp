@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -18,6 +18,7 @@ export default function OnboardingAge() {
   const { role } = useAppState();
   const worker = useWorkerData();
   const isWorker = role === "worker";
+  const [ageError, setAgeError] = useState<string | null>(null);
 
   const homeRoute = isWorker ? "/worker/home" : "/client/home";
   const leave = () => {
@@ -79,8 +80,30 @@ export default function OnboardingAge() {
           right away — adding and scheduling jobs unlocks once you've chosen.
         </Text>
 
+        {ageError ? (
+          <View className="mt-5 flex-row items-center gap-2 rounded-2xl border p-3" style={{ borderColor: palette.danger, backgroundColor: palette.danger + "11" }}>
+            <Ionicons name="alert-circle-outline" size={16} color={palette.danger} />
+            <Text className="flex-1 text-xs" style={{ color: palette.danger }}>{ageError}</Text>
+          </View>
+        ) : null}
+
         <View className="mt-7">
-          <AgeSelector submitLabel="Continue" onSubmit={async (age) => { await worker.setAge(age); leave(); }} />
+          <AgeSelector
+            submitLabel="Continue"
+            onSubmit={async (age) => {
+              const result = await worker.setAge(age);
+              if (!result.ok) {
+                setAgeError(
+                  result.reason === "mismatch"
+                    ? "That doesn't match the birthday you signed up with. Double-check the age you picked."
+                    : `You can only change your age once a month. Try again after ${new Date(result.availableOn).toLocaleDateString()}.`
+                );
+                return;
+              }
+              setAgeError(null);
+              leave();
+            }}
+          />
         </View>
       </ScrollView>
     </View>
