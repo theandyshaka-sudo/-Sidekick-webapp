@@ -9,11 +9,87 @@ import { useAppState } from "../src/context/AppStateContext";
 import { useAuth } from "../src/context/AuthContext";
 import { useRolePalette } from "../src/theme/useRolePalette";
 import { useThemeVars } from "../src/theme/useThemeVars";
+import { supabase } from "../src/lib/supabase";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// Post-login nudge to turn on email 2-step verification (the code-sending itself is wired to the
-// email provider later; this just records the preference).
+// Enters when 2-step verification is already ON for this account: password already checked out,
+// this asks for the one-time code Supabase just emailed via signInWithOtp (see submit()) and
+// confirms it with verifyOtp before letting the login through.
+function TwoFactorCodeModal({
+  email,
+  onVerified,
+}: {
+  email: string;
+  onVerified: () => void;
+}) {
+  const palette = useRolePalette();
+  const themeVars = useThemeVars();
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [resent, setResent] = useState(false);
+
+  const verify = async () => {
+    setError(null);
+    setVerifying(true);
+    const { error } = await supabase.auth.verifyOtp({ email, token: code.trim(), type: "email" });
+    setVerifying(false);
+    if (error) {
+      setError("That code is incorrect or expired.");
+      return;
+    }
+    onVerified();
+  };
+
+  const resend = async () => {
+    setError(null);
+    setResent(false);
+    await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
+    setResent(true);
+  };
+
+  return (
+    <Modal visible transparent animationType="fade">
+      <View className="flex-1 justify-center bg-black/50 px-6" style={themeVars}>
+        <View className="rounded-3xl p-6" style={{ backgroundColor: palette.surface }}>
+          <View className="mb-4 h-14 w-14 items-center justify-center rounded-2xl" style={{ backgroundColor: palette.primarySoft }}>
+            <Ionicons name="mail-open-outline" size={26} color={palette.primary} />
+          </View>
+          <Text className="text-xl font-bold text-text">Enter your code</Text>
+          <Text className="mt-2 text-sm leading-6 text-muted">
+            We emailed a one-time code to <Text className="font-semibold text-text">{email}</Text>.
+          </Text>
+          <TextInput
+            value={code}
+            onChangeText={(t) => { setCode(t.replace(/[^0-9]/g, "").slice(0, 6)); setError(null); }}
+            placeholder="123456"
+            placeholderTextColor={palette.muted}
+            keyboardType="number-pad"
+            style={{ color: palette.text, borderColor: error ? palette.danger : palette.border }}
+            className="mt-5 rounded-2xl border bg-bg px-4 py-3 text-center text-2xl tracking-widest"
+          />
+          {error ? (
+            <View className="mt-2 flex-row items-center gap-1.5">
+              <Ionicons name="alert-circle" size={14} color={palette.danger} />
+              <Text className="flex-1 text-xs" style={{ color: palette.danger }}>{error}</Text>
+            </View>
+          ) : null}
+          <View className="mt-6">
+            <PrimaryButton label="Verify" onPress={verify} loading={verifying} disabled={code.length < 6} />
+          </View>
+          <Pressable onPress={resend} className="mt-4 items-center py-1 active:opacity-60">
+            <Text className="text-sm font-semibold" style={{ color: palette.primary }}>
+              {resent ? "Code resent" : "Resend code"}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// Post-login nudge to turn on email 2-step verification for an account that doesn't have it yet.
 function TwoFactorModal({ onEnable, onSkip }: { onEnable: () => void; onSkip: () => void }) {
   const palette = useRolePalette();
   const themeVars = useThemeVars();
@@ -113,6 +189,7 @@ export default function Login() {
   const [submitting, setSubmitting] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
   const [showTwoFactor, setShowTwoFactor] = useState(false);
+  const [pendingTwoFactorEmail, setPendingTwoFactorEmail] = useState<string | null>(null);
 
   const homeRoute = isWorker ? "/worker/home" : "/client/home";
 
@@ -136,10 +213,12 @@ export default function Login() {
     const account = result.account;
     // The role profile hydrates from the account automatically (see Worker/ClientDataContext).
     await setLegalAccepted(account.acceptedTerms);
-    // Offer 2FA on login unless they've already turned it on.
     if (account.twoFactorEnabled) {
-      router.replace(homeRoute);
+      // Password already checked out — email a one-time code and gate the rest of login on it.
+      await supabase.auth.signInWithOtp({ email: account.email, options: { shouldCreateUser: false } });
+      setPendingTwoFactorEmail(account.email);
     } else {
+      // Offer to turn 2FA on for next time; this login itself already proved password ownership.
       setShowTwoFactor(true);
     }
   };
@@ -204,6 +283,9 @@ export default function Login() {
           onEnable={async () => { await setTwoFactor(true); router.replace(homeRoute); }}
           onSkip={() => router.replace(homeRoute)}
         />
+      ) : null}
+      {pendingTwoFactorEmail ? (
+        <TwoFactorCodeModal email={pendingTwoFactorEmail} onVerified={() => router.replace(homeRoute)} />
       ) : null}
     </View>
   );

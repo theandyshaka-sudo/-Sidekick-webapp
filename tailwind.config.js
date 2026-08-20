@@ -31,6 +31,19 @@ module.exports = {
         danger: withOpacity("--color-danger"),
         border: withOpacity("--color-border"),
       },
+      // Backed by CSS vars set in src/theme/textSize.ts, same runtime mechanism the colors above
+      // use — lets the Appearance tab's text-size preference resize every text-* utility at once.
+      // "default" values match Tailwind's own built-ins, used as the fallback.
+      fontSize: {
+        xs: "var(--fs-xs, 0.75rem)",
+        sm: "var(--fs-sm, 0.875rem)",
+        base: "var(--fs-base, 1rem)",
+        lg: "var(--fs-lg, 1.125rem)",
+        xl: "var(--fs-xl, 1.25rem)",
+        "2xl": "var(--fs-2xl, 1.5rem)",
+        "3xl": "var(--fs-3xl, 1.875rem)",
+        "4xl": "var(--fs-4xl, 2.25rem)",
+      },
     },
   },
   plugins: [],

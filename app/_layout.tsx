@@ -12,9 +12,9 @@ import { GroupsProvider } from "../src/context/GroupsContext";
 import { ThemeSurface } from "../src/theme/ThemeSurface";
 
 function ThemedStack() {
-  const { role, colorScheme } = useAppState();
+  const { role, colorScheme, accentColor, textSize } = useAppState();
   return (
-    <ThemeSurface role={role ?? "client"} colorScheme={colorScheme}>
+    <ThemeSurface role={role ?? "client"} colorScheme={colorScheme} accentColor={accentColor} textSize={textSize}>
       <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
       <Stack screenOptions={{ headerShown: false }} />
     </ThemeSurface>
