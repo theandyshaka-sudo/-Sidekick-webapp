@@ -115,7 +115,7 @@ export default function ProviderDetail() {
           </View>
           {worker.inSoftZone && (
             <Text className="mt-3 px-6 text-center text-xs text-amber-600">
-              This business owner prefers not to work this far out, but you're welcome to reach out anyway.
+              This business owner prefers not to work this far out, however you can still ask.
             </Text>
           )}
         </View>

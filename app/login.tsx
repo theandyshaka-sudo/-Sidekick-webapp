@@ -108,6 +108,8 @@ export default function Login() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [usernameError, setUsernameError] = useState<string | undefined>();
+  const [passwordError, setPasswordError] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
   const [showTwoFactor, setShowTwoFactor] = useState(false);
@@ -115,6 +117,8 @@ export default function Login() {
   const homeRoute = isWorker ? "/worker/home" : "/client/home";
 
   const submit = async () => {
+    setUsernameError(undefined);
+    setPasswordError(undefined);
     if (!username.trim() || !password) {
       setError("Enter your username and password.");
       return;
@@ -124,7 +128,9 @@ export default function Login() {
     const result = await logIn(role ?? "client", username.trim(), password);
     setSubmitting(false);
     if (!result.ok) {
-      setError(result.error);
+      if (result.error === "Username incorrect.") setUsernameError(result.error);
+      else if (result.error === "Password incorrect.") setPasswordError(result.error);
+      else setError(result.error);
       return;
     }
     const account = result.account;
@@ -154,8 +160,24 @@ export default function Login() {
         </Text>
         <Text className="mb-6 text-2xl font-bold text-text">Welcome back</Text>
 
-        <FormField label="Username" value={username} onChangeText={setUsername} placeholder="jordan" autoCapitalize="none" autoCorrect={false} />
-        <FormField label="Password" value={password} onChangeText={setPassword} placeholder="Your password" secureTextEntry autoCapitalize="none" />
+        <FormField
+          label="Username"
+          value={username}
+          onChangeText={(t) => { setUsername(t); setUsernameError(undefined); }}
+          placeholder="jordan"
+          autoCapitalize="none"
+          autoCorrect={false}
+          error={usernameError}
+        />
+        <FormField
+          label="Password"
+          value={password}
+          onChangeText={(t) => { setPassword(t); setPasswordError(undefined); }}
+          placeholder="Your password"
+          secureTextEntry
+          autoCapitalize="none"
+          error={passwordError}
+        />
 
         {error ? (
           <View className="mb-3 flex-row items-center gap-1.5">

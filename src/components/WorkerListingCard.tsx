@@ -19,7 +19,10 @@ export function WorkerListingCard({
   const palette = useRolePalette();
 
   return (
-    <View className="rounded-2xl border border-border bg-surface p-4">
+    <View
+      className="rounded-2xl border border-border bg-surface p-4"
+      style={worker.inSoftZone ? { opacity: 0.6 } : undefined}
+    >
       <Pressable className="flex-row items-center gap-3 active:opacity-70" onPress={onOpen}>
         <Avatar uri={worker.avatarUri} name={worker.name} size={52} />
         <View className="flex-1">
@@ -47,7 +50,7 @@ export function WorkerListingCard({
           </View>
           {worker.inSoftZone && (
             <Text className="mt-1 text-xs text-amber-600">
-              This business owner prefers not to work this far out — you can still ask
+              This business owner prefers not to work this far out, however you can still ask
             </Text>
           )}
         </View>

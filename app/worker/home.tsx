@@ -153,6 +153,7 @@ export default function WorkerHome() {
               photoUri={service.photoUri}
               active={service.active}
               onToggleActive={(active) => updateService(service.id, { active })}
+              onPress={() => router.push(`/worker/service/${service.id}`)}
             />
           ))}
           <Pressable

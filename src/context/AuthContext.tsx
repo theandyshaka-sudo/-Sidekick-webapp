@@ -3,6 +3,8 @@ import { supabase } from "../lib/supabase";
 import type { Role } from "./AppStateContext";
 import type { PlanId, BillingCycle } from "../data/plans";
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 // Backed by Supabase Auth (auth.users) + the `users` table. The password never lives here —
 // Supabase Auth hashes and stores it server-side.
 export type StoredAccount = {
@@ -55,6 +57,9 @@ type AuthState = {
   logOut: () => Promise<void>;
   // Persist profile edits (name, business, avatar, bio, location…) back onto the account row.
   updateAccount: (patch: Partial<StoredAccount>) => Promise<void>;
+  updateUsername: (username: string) => Promise<AuthResult>;
+  updateEmail: (email: string) => Promise<AuthResult>;
+  updatePassword: (password: string) => Promise<AuthResult>;
   setTwoFactor: (enabled: boolean) => Promise<void>;
   requestPasswordReset: (email: string) => Promise<void>;
 };
@@ -240,10 +245,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: email, error: lookupError } = await supabase.rpc("email_for_username", {
       lookup_username: username.trim(),
     });
-    if (lookupError || !email) return { ok: false, error: "No account found with that username." };
+    if (lookupError || !email) return { ok: false, error: "Username incorrect." };
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return { ok: false, error: "Incorrect password." };
+    if (error) return { ok: false, error: "Password incorrect." };
 
     const account = await fetchAccount(data.user.id);
     if (!account) return { ok: false, error: "Couldn't load your account. Try again." };
@@ -297,6 +302,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCurrentUser({ ...currentUser, ...patch });
   };
 
+  // Separate from updateAccount because a taken username needs to surface a friendly error
+  // instead of silently no-op'ing (updateAccount's patch-and-forget shape has no error channel).
+  const updateUsername = async (username: string): Promise<AuthResult> => {
+    if (!currentUser) return { ok: false, error: "Not signed in." };
+    const trimmed = username.trim();
+    if (!trimmed) return { ok: false, error: "Username can't be empty." };
+    const { error } = await supabase.from("users").update({ username: trimmed }).eq("id", currentUser.id);
+    if (error) {
+      if (error.message.toLowerCase().includes("username")) {
+        return { ok: false, error: "That username is already taken." };
+      }
+      return { ok: false, error: error.message };
+    }
+    setCurrentUser({ ...currentUser, username: trimmed });
+    return { ok: true };
+  };
+
+  // Supabase emails a confirmation link to the new address before the change actually takes
+  // effect, so `currentUser.email` intentionally isn't updated here — it'll refresh next login.
+  const updateEmail = async (email: string): Promise<AuthResult> => {
+    const trimmed = email.trim();
+    if (!EMAIL_RE.test(trimmed)) return { ok: false, error: "Enter a valid email address." };
+    const { error } = await supabase.auth.updateUser({ email: trimmed });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  };
+
+  const updatePassword = async (password: string): Promise<AuthResult> => {
+    if (password.length < 8) return { ok: false, error: "Password must be at least 8 characters." };
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  };
+
   const setTwoFactor = async (enabled: boolean) => {
     await updateAccount({ twoFactorEnabled: enabled });
   };
@@ -307,7 +346,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ currentUser, isLoading, signUp, logIn, logOut, updateAccount, setTwoFactor, requestPasswordReset }}
+      value={{
+        currentUser,
+        isLoading,
+        signUp,
+        logIn,
+        logOut,
+        updateAccount,
+        updateUsername,
+        updateEmail,
+        updatePassword,
+        setTwoFactor,
+        requestPasswordReset,
+      }}
     >
       {children}
     </AuthContext.Provider>
