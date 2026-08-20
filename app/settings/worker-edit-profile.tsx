@@ -1,17 +1,17 @@
 import { useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { ScreenHeader } from "../../src/components/settings/ScreenHeader";
 import { Avatar } from "../../src/components/Avatar";
 import { FormField } from "../../src/components/FormField";
 import { PrimaryButton } from "../../src/components/PrimaryButton";
+import { ActionSheet, type ActionSheetOption } from "../../src/components/ActionSheet";
 import { useWorkerData } from "../../src/context/WorkerDataContext";
 import { useAuth } from "../../src/context/AuthContext";
 import { useRolePalette } from "../../src/theme/useRolePalette";
 import { geocodeLocation } from "../../src/lib/geocode";
-
-const AVATAR_OPTIONS = [68, 15, 22, 8, 51].map((img) => `https://i.pravatar.cc/150?img=${img}`);
+import { pickAndUploadPhoto } from "../../src/lib/uploadPhoto";
 
 export default function WorkerEditProfile() {
   const router = useRouter();
@@ -26,6 +26,8 @@ export default function WorkerEditProfile() {
   const [radius, setRadius] = useState(
     currentUser?.travelRadiusMiles != null ? String(currentUser.travelRadiusMiles) : ""
   );
+  const [avatarSheetOpen, setAvatarSheetOpen] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const save = async () => {
     updateProfile(form);
@@ -52,11 +54,18 @@ export default function WorkerEditProfile() {
     else router.back();
   };
 
-  const nextAvatar = () => {
-    const currentIndex = AVATAR_OPTIONS.indexOf(form.avatarUri);
-    const next = AVATAR_OPTIONS[(currentIndex + 1) % AVATAR_OPTIONS.length];
-    setForm((prev) => ({ ...prev, avatarUri: next }));
+  const pickAvatar = async (source: "camera" | "library") => {
+    if (!currentUser) return;
+    setUploadingAvatar(true);
+    const url = await pickAndUploadPhoto(source, currentUser.id, "avatar");
+    setUploadingAvatar(false);
+    if (url) setForm((prev) => ({ ...prev, avatarUri: url }));
   };
+
+  const avatarOptions: ActionSheetOption[] = [
+    { label: "Take photo", icon: "camera-outline", onPress: () => pickAvatar("camera") },
+    { label: "Choose from library", icon: "image-outline", onPress: () => pickAvatar("library") },
+  ];
 
   return (
     <View className="flex-1 bg-bg">
@@ -66,13 +75,18 @@ export default function WorkerEditProfile() {
           <View>
             <Avatar uri={form.avatarUri} name={form.displayName} size={88} />
             <Pressable
-              onPress={nextAvatar}
+              onPress={() => setAvatarSheetOpen(true)}
+              disabled={uploadingAvatar}
               className="absolute -bottom-1 -right-1 h-8 w-8 items-center justify-center rounded-full border-2 border-bg bg-primary"
             >
-              <Ionicons name="camera" size={14} color={palette.primaryFg} />
+              {uploadingAvatar ? (
+                <ActivityIndicator size="small" color={palette.primaryFg} />
+              ) : (
+                <Ionicons name="camera" size={14} color={palette.primaryFg} />
+              )}
             </Pressable>
           </View>
-          <Text className="mt-2 text-xs text-muted">Tap the camera to preview a new photo</Text>
+          <Text className="mt-2 text-xs text-muted">Tap the camera to change your photo</Text>
         </View>
 
         <FormField
@@ -128,6 +142,13 @@ export default function WorkerEditProfile() {
           <PrimaryButton label={onboarding ? "Save & continue" : "Save changes"} onPress={save} />
         </View>
       </ScrollView>
+
+      <ActionSheet
+        visible={avatarSheetOpen}
+        title="Update profile photo"
+        options={avatarOptions}
+        onClose={() => setAvatarSheetOpen(false)}
+      />
     </View>
   );
 }

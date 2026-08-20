@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -46,6 +46,7 @@ export default function ProviderDetail() {
   const { ensureConversation } = useMessages();
   const { nearbyWorkers } = useClientData();
   const [reviews, setReviews] = useState<ReturnType<typeof rowToReview>[]>([]);
+  const [photos, setPhotos] = useState<string[]>([]);
 
   const worker = nearbyWorkers.find((w) => w.id === id);
 
@@ -55,7 +56,16 @@ export default function ProviderDetail() {
       if (error) console.error("[worker_reviews] fetch failed:", error.message);
       setReviews(((data as ReviewRow[] | null) ?? []).map(rowToReview));
     });
-  }, [worker?.workerId]);
+    supabase
+      .from("service_photos")
+      .select("url")
+      .eq("service_id", worker.id)
+      .order("created_at", { ascending: true })
+      .then(({ data, error }) => {
+        if (error) console.error("[service_photos] fetch failed:", error.message);
+        setPhotos(((data as { url: string }[] | null) ?? []).map((p) => p.url));
+      });
+  }, [worker?.workerId, worker?.id]);
 
   if (!worker) {
     return (
@@ -137,6 +147,17 @@ export default function ProviderDetail() {
             </View>
           </View>
         </View>
+
+        {photos.length > 0 ? (
+          <View className="mt-6">
+            <Text className="mb-3 px-6 text-sm font-semibold uppercase tracking-wider text-muted">Photos</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 24, gap: 8 }}>
+              {photos.map((url, i) => (
+                <Image key={i} source={{ uri: url }} className="h-32 w-32 rounded-2xl" />
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
 
         <View className="mt-6 px-6">
           <Text className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted">

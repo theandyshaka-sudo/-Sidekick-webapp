@@ -77,6 +77,7 @@ function rowToNearbyWorker(row: DiscoverRow): NearbyWorker {
     ratingCount: row.rating_count ?? 0,
     distanceMiles: row.distance_miles,
     inSoftZone: row.in_soft_zone,
+    photoUri: row.photo_uri ?? "",
     availLabel: `${formatHour(row.avail_from)}–${formatHour(row.avail_to)}`,
     age: row.age ?? 0,
     bio: row.bio ?? "",

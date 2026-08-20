@@ -26,7 +26,14 @@
     },
     "plugins": [
       "expo-router",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "SideKick needs access to your photos to set a profile picture or add photos to a service listing.",
+          "cameraPermission": "SideKick needs access to your camera to take a profile picture or a photo for a service listing."
+        }
+      ]
     ]
   }
 }

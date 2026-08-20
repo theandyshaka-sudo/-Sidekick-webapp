@@ -1,4 +1,4 @@
-import { Pressable, Text, View } from "react-native";
+import { Image, Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Avatar } from "./Avatar";
 import { PrimaryButton } from "./PrimaryButton";
@@ -54,6 +54,7 @@ export function WorkerListingCard({
             </Text>
           )}
         </View>
+        {worker.photoUri ? <Image source={{ uri: worker.photoUri }} className="h-12 w-12 rounded-xl" /> : null}
         <View className="items-end">
           <Text className="text-sm font-bold text-text">{worker.priceLabel}</Text>
           <View className="mt-1 flex-row items-center gap-0.5">

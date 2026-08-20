@@ -39,6 +39,7 @@ export type NearbyWorker = {
   ratingCount: number;
   distanceMiles: number | null; // null until both the client and this worker have a saved location
   inSoftZone: boolean; // true when just past the worker's travel radius but still shown, not hidden
+  photoUri: string; // this service's cover photo
   availLabel: string; // hours this worker is willing to work, e.g. "12 PM–4 PM"
   age: number; // self-reported by the business owner, not verified
   bio: string;
