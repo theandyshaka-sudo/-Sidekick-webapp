@@ -27,21 +27,22 @@ export default function ClientEditProfile() {
   const save = async () => {
     updateProfile(form);
     // Persist to the stored account so edits survive a reload / re-login. The edit screen treats
-    // the name as one field, so it lives in firstName (hydration joins first + last). Re-geocode
-    // when the location text changed, or when it's set but was never geocoded yet — but not on
-    // every save, so an unrelated name/avatar edit doesn't fire a Mapbox call for no reason.
-    const locationChanged =
-      zip !== (currentUser?.zip ?? "") ||
-      city !== (currentUser?.city ?? "") ||
-      (!!zip.trim() && (currentUser?.lat == null || currentUser?.lng == null));
-    const coords = locationChanged ? await geocodeLocation(zip, city) : null;
+    // the name as one field, so it lives in firstName (hydration joins first + last). Always
+    // re-geocode when a location is set, rather than only on a text change — a "only when
+    // changed" optimization here previously left wrong/stale coordinates stuck forever whenever a
+    // lookup had ever resolved to the wrong place, since nothing about the zip/city text itself
+    // needed to change to fix that. A Mapbox call on every save is cheap; a silently-stuck bad
+    // coordinate is not.
+    const hasLocation = !!zip.trim() || !!city.trim();
+    const coords = hasLocation ? await geocodeLocation(zip, city) : null;
     await updateAccount({
       firstName: form.fullName,
       lastName: "",
       avatarUri: form.avatarUri,
       zip,
       city,
-      ...(locationChanged ? { lat: coords?.lat ?? null, lng: coords?.lng ?? null } : {}),
+      lat: coords?.lat ?? null,
+      lng: coords?.lng ?? null,
     });
     if (onboarding) router.push("/onboarding/verify?onboarding=1");
     else router.back();
