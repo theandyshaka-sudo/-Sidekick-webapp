@@ -75,11 +75,46 @@ standing legal caveat below.
 - Guardian consent flow for minors, background checks — removed earlier per HANDOFF §6 gap; not
   in scope unless the user asks to build toward a real launch (see legal caveat below).
 
-**Recommended next step:** reviews, real distance, and a worker travel-radius cutoff (with a
-1-mile "soft zone" that shows a polite note instead of a hard hide) are all done as of 2026-08-20
-— see above. Discover's core loop (listings, chat, bookings, ratings, distance, radius) is now
-fully real. Groups and notification prefs are the biggest remaining mock surfaces if the user
-wants to keep going.
+Later the same day, worked through a batch of polish/feature notes the user wrote while using the
+app:
+- Soft-zone note reworded to "...however you can still ask"; the Discover card now dims
+  (`opacity: 0.6`) instead of only showing text, so it visually reads as "still bookable, just not
+  ideal" rather than looking identical to a normal listing.
+- Login distinguishes "Username incorrect." vs "Password incorrect." (`AuthContext.logIn`) and
+  highlights the specific `FormField` red instead of one generic banner (`app/login.tsx`).
+- Settings → Security got real account management: change username (checks the existing
+  lower(username) unique index, friendly "already taken" error), change email (goes through
+  Supabase's own confirm-both-inboxes flow via `auth.updateUser`), change password — all new
+  `AuthContext` methods (`updateUsername`/`updateEmail`/`updatePassword`).
+- Tapping a service on the worker home screen now opens `app/worker/service/[id].tsx`, a
+  dedicated page for that one service (toggle active, pricing, hours, days, delete) instead of
+  only reaching it through the flat "manage all services" list.
+- Real photo uploads (`20260820150000_add_photo_uploads.sql`): a Storage bucket `uploads`
+  (path-scoped per user via RLS) backs two features — (1) profile photo camera/library picker
+  (`src/lib/uploadPhoto.ts`, `expo-image-picker`) replacing the old preset-avatar cycling on both
+  edit-profile screens, and (2) a `service_photos` table for up to 20 photos per service, managed
+  from the new service detail page (add/delete/"set as cover" — cover stays
+  `worker_services.photo_uri`, which already existed and was already returned by
+  `discover_services()` but had never actually been read on the client side until now —
+  `WorkerListingCard` shows it next to "View", the provider profile page shows the full gallery).
+- Two-step verification is now actually functional, not just a saved preference: on login, once
+  the password checks out, if 2FA is on the app calls `supabase.auth.signInWithOtp()` to email a
+  real one-time code and only completes login after `verifyOtp()` succeeds (`app/login.tsx`
+  `TwoFactorCodeModal`). **If the user reports never receiving a code**, check Supabase dashboard
+  → Authentication → Email Templates → Magic Link — the `{{ .Token }}` placeholder needs to be in
+  that template for the emailed message to actually contain a 6-digit code, or Supabase's default
+  free-tier email rate limit may be the culprit instead.
+- Appearance tab: added an accent-color picker (`src/components/AccentColorPicker.tsx` — a
+  saturation/value square + hue slider, built from `PanResponder` + `expo-linear-gradient`, no new
+  dependency needed) plus quick presets, and three text-size presets (Small/Default/Large). Both
+  work via CSS variables (`src/theme/accentColor.ts`, `src/theme/textSize.ts`) using the same
+  runtime-variable trick the color theming already relied on (`tailwind.config.js` `fontSize` now
+  also reads CSS vars, same pattern as `colors`) — applies everywhere at once, no per-screen work.
+
+**Recommended next step:** Discover's core loop (listings, chat, bookings, ratings, distance,
+radius, photos) plus account settings, real 2FA, and appearance customization are all done as of
+2026-08-20. Groups and notification/alarm prefs are the biggest remaining mock surfaces if the
+user wants to keep going.
 
 **Standing legal caveat (don't relitigate on small changes, but don't forget it either):** this
 app matches minors (self-reported ages down to 14) with adult strangers for in-person jobs, with
