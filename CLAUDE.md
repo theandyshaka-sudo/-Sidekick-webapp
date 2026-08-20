@@ -7,6 +7,18 @@ already been run by hand in the Supabase SQL Editor (this repo's Supabase projec
 auto-deploy migrations from GitHub — treat every new migration file as needing a manual run,
 and tell the user exactly what SQL to paste).
 
+**⚠️ NEXT STEP WHEN THIS PICKS BACK UP — DO THIS FIRST, BEFORE ANY NEW WORK:** everything in
+today's "polish/feature notes" batch below (soft-zone dimming, login field errors, account
+settings, the service detail page, real photo uploads, real 2-step verification, accent color +
+text size) was built, pushed to GitHub, and deployed to Vercel — but **the user has not tried any
+of it yet** (ran out of time same day, said they'd test "tomorrow"). They said they'd paste the
+photo-uploads SQL migration themselves before ending the session, so check whether
+`20260820150000_add_photo_uploads.sql` has actually been run (ask, or take their word for it) —
+don't assume it's done just because it's dated today. Walk them through testing all of the
+2026-08-20 batch end-to-end and fix anything broken **before** starting any new feature or moving
+to "Recommended next step" below — do not treat today's work as done/stable until they've
+confirmed it in the actual app.
+
 **2026-08-20:** did the recommended next step from 2026-08-19 — wired real reviews into Discover
 and the provider profile page (`20260820120000_add_worker_reviews.sql`). `discover_services()`
 now returns real `rating_avg`/`rating_count` aggregated from completed, rated bookings instead of
