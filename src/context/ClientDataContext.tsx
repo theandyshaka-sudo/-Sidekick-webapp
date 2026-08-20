@@ -33,6 +33,7 @@ type ClientDataState = {
   notificationPrefs: ClientNotificationPrefs;
   updateNotificationPrefs: (patch: Partial<ClientNotificationPrefs>) => void;
   nearbyWorkers: NearbyWorker[];
+  refreshNearbyWorkers: () => void;
 };
 
 // Shape of a row returned by the discover_services() RPC (snake_case, as Postgres returns it).
@@ -51,10 +52,17 @@ type DiscoverRow = {
   avail_from: number;
   avail_to: number;
   photo_uri: string | null;
+  rating_avg: number | null;
+  rating_count: number;
+  distance_miles: number | null;
+  in_soft_zone: boolean;
 };
 
-// No reviews/ratings/geo system yet (M3+), so those fields are honest zeros/empties rather than
-// invented placeholder data.
+// Rating/ratingCount/distanceMiles are all real now, computed server-side in discover_services()
+// from completed bookings (ratings) and each side's geocoded lat/lng (distance, src/lib/geocode.ts).
+// distanceMiles is null until both the client and that worker have a saved location. Review text
+// itself is fetched on demand by the provider profile screen (worker_reviews RPC) rather than
+// embedded here, since a worker can have multiple listings.
 function rowToNearbyWorker(row: DiscoverRow): NearbyWorker {
   return {
     id: row.service_id,
@@ -65,13 +73,13 @@ function rowToNearbyWorker(row: DiscoverRow): NearbyWorker {
     categoryId: serviceCatalog.find((s) => s.name === row.title)?.category ?? "Events & misc",
     category: row.title,
     priceLabel: formatServicePrice(row.price_type, row.price_amount),
-    rating: 0,
-    ratingCount: 0,
-    distanceMiles: 0,
+    rating: row.rating_avg ?? 0,
+    ratingCount: row.rating_count ?? 0,
+    distanceMiles: row.distance_miles,
+    inSoftZone: row.in_soft_zone,
     availLabel: `${formatHour(row.avail_from)}–${formatHour(row.avail_to)}`,
     age: row.age ?? 0,
     bio: row.bio ?? "",
-    reviews: [],
   };
 }
 
@@ -91,6 +99,13 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   const [nearbyWorkers, setNearbyWorkers] = useState<NearbyWorker[]>([]);
   const { currentUser } = useAuth();
 
+  const refreshNearbyWorkers = () => {
+    supabase.rpc("discover_services").then(({ data, error }) => {
+      if (error) console.error("[discover_services] fetch failed:", error.message);
+      if (data) setNearbyWorkers((data as DiscoverRow[]).map(rowToNearbyWorker));
+    });
+  };
+
   // Rehydrate the in-memory profile/location from the signed-in account (on boot, login, logout).
   // Keyed on username so edits written back under the same username aren't clobbered.
   useEffect(() => {
@@ -100,10 +115,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         avatarUri: currentUser.avatarUri,
       });
       setLocation({ zip: currentUser.zip, city: currentUser.city });
-      supabase.rpc("discover_services").then(({ data, error }) => {
-        if (error) console.error("[discover_services] fetch failed:", error.message);
-        if (data) setNearbyWorkers((data as DiscoverRow[]).map(rowToNearbyWorker));
-      });
+      refreshNearbyWorkers();
     } else if (!currentUser) {
       setProfile({ fullName: "", avatarUri: "" });
       setLocation({ zip: "", city: "" });
@@ -131,6 +143,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         notificationPrefs,
         updateNotificationPrefs,
         nearbyWorkers,
+        refreshNearbyWorkers,
       }}
     >
       {children}

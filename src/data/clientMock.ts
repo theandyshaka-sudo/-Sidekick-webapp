@@ -37,11 +37,11 @@ export type NearbyWorker = {
   priceLabel: string;
   rating: number;
   ratingCount: number;
-  distanceMiles: number;
+  distanceMiles: number | null; // null until both the client and this worker have a saved location
+  inSoftZone: boolean; // true when just past the worker's travel radius but still shown, not hidden
   availLabel: string; // hours this worker is willing to work, e.g. "12 PM–4 PM"
   age: number; // self-reported by the business owner, not verified
   bio: string;
-  reviews: Array<{ author: string; stars: number; text: string }>;
 };
 
 // The signed-in client — blank until they fill in their profile.

@@ -33,18 +33,23 @@ export function WorkerListingCard({
             <View className="flex-row items-center gap-1">
               <Ionicons name="star" size={12} color={palette.primary} />
               <Text className="text-xs text-muted">
-                {worker.rating} ({worker.ratingCount})
+                {worker.ratingCount ? `${worker.rating.toFixed(1)} (${worker.ratingCount})` : "No reviews yet"}
               </Text>
             </View>
             <View className="flex-row items-center gap-1">
               <Ionicons name="location-outline" size={12} color={palette.muted} />
-              <Text className="text-xs text-muted">{worker.distanceMiles} mi</Text>
+              <Text className="text-xs text-muted">{worker.distanceMiles != null ? `${worker.distanceMiles} mi` : "—"}</Text>
             </View>
           </View>
           <View className="mt-1 flex-row items-center gap-1">
             <Ionicons name="time-outline" size={12} color={palette.muted} />
             <Text className="text-xs text-muted">Available {worker.availLabel}</Text>
           </View>
+          {worker.inSoftZone && (
+            <Text className="mt-1 text-xs text-amber-600">
+              This business owner prefers not to work this far out — you can still ask
+            </Text>
+          )}
         </View>
         <View className="items-end">
           <Text className="text-sm font-bold text-text">{worker.priceLabel}</Text>

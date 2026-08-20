@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -9,10 +10,31 @@ import { useRolePalette } from "../../src/theme/useRolePalette";
 import { useJobs } from "../../src/context/JobsContext";
 import { useMessages } from "../../src/context/MessagesContext";
 import { useClientData } from "../../src/context/ClientDataContext";
+import { supabase } from "../../src/lib/supabase";
 import type { PriceType } from "../../src/data/workerMock";
 
 function parsePrice(label: string): { price: number; priceType: PriceType } {
   return { price: Number(label.replace(/[^0-9]/g, "")) || 0, priceType: label.includes("/hr") ? "hour" : "job" };
+}
+
+// Shape of a row from `worker_reviews()` (snake_case, as Postgres returns it).
+type ReviewRow = {
+  reviewer_business_name: string | null;
+  reviewer_first_name: string | null;
+  reviewer_avatar_uri: string | null;
+  rating: number;
+  review_text: string;
+  completed_at: string | null;
+};
+
+function rowToReview(row: ReviewRow) {
+  return {
+    author: row.reviewer_business_name || row.reviewer_first_name || "SideKick user",
+    avatar: row.reviewer_avatar_uri ?? "",
+    rating: row.rating,
+    text: row.review_text,
+    date: row.completed_at ?? undefined,
+  };
 }
 
 export default function ProviderDetail() {
@@ -23,8 +45,18 @@ export default function ProviderDetail() {
   const { jobs, requestJob } = useJobs();
   const { ensureConversation } = useMessages();
   const { nearbyWorkers } = useClientData();
+  const [reviews, setReviews] = useState<ReturnType<typeof rowToReview>[]>([]);
 
   const worker = nearbyWorkers.find((w) => w.id === id);
+
+  useEffect(() => {
+    if (!worker) return;
+    supabase.rpc("worker_reviews", { target_worker_id: worker.workerId }).then(({ data, error }) => {
+      if (error) console.error("[worker_reviews] fetch failed:", error.message);
+      setReviews(((data as ReviewRow[] | null) ?? []).map(rowToReview));
+    });
+  }, [worker?.workerId]);
+
   if (!worker) {
     return (
       <View className="flex-1 items-center justify-center bg-bg">
@@ -68,17 +100,24 @@ export default function ProviderDetail() {
           <View className="mt-2 flex-row items-center gap-3">
             <View className="flex-row items-center gap-1">
               <Ionicons name="star" size={14} color={palette.primary} />
-              <Text className="text-sm text-muted">{worker.rating} ({worker.ratingCount})</Text>
+              <Text className="text-sm text-muted">
+                {worker.ratingCount ? `${worker.rating.toFixed(1)} (${worker.ratingCount})` : "No reviews yet"}
+              </Text>
             </View>
             <View className="flex-row items-center gap-1">
               <Ionicons name="location-outline" size={14} color={palette.muted} />
-              <Text className="text-sm text-muted">{worker.distanceMiles} mi away</Text>
+              <Text className="text-sm text-muted">{worker.distanceMiles != null ? `${worker.distanceMiles} mi away` : "Distance unknown"}</Text>
             </View>
           </View>
           <View className="mt-3 flex-row items-center gap-1.5 rounded-full border border-border px-3 py-1">
             <Ionicons name="happy-outline" size={13} color={palette.muted} />
             <Text className="text-xs font-medium text-muted">{worker.age} years old (self-reported)</Text>
           </View>
+          {worker.inSoftZone && (
+            <Text className="mt-3 px-6 text-center text-xs text-amber-600">
+              This business owner prefers not to work this far out, but you're welcome to reach out anyway.
+            </Text>
+          )}
         </View>
 
         <View className="mt-6 px-6">
@@ -101,11 +140,11 @@ export default function ProviderDetail() {
 
         <View className="mt-6 px-6">
           <Text className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted">
-            Reviews ({worker.reviews.length})
+            Reviews ({reviews.length})
           </Text>
           <View className="gap-3">
-            {worker.reviews.map((review, i) => (
-              <ReviewCard key={i} author={review.author} rating={review.stars} text={review.text} />
+            {reviews.map((review, i) => (
+              <ReviewCard key={i} author={review.author} avatar={review.avatar} rating={review.rating} text={review.text} date={review.date} />
             ))}
           </View>
         </View>

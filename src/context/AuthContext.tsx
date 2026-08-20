@@ -17,6 +17,9 @@ export type StoredAccount = {
   zip: string;
   city: string;
   country: string;
+  lat: number | null; // geocoded from zip/city (src/lib/geocode.ts) when the user saves their location
+  lng: number | null;
+  travelRadiusMiles: number | null; // worker only; null = will travel any distance
   acceptedTerms: boolean;
   twoFactorEnabled: boolean;
   avatarUri: string;
@@ -31,7 +34,14 @@ export type StoredAccount = {
 
 export type SignUpInput = Omit<
   StoredAccount,
-  "id" | "twoFactorEnabled" | "selfReportedAge" | "ageConfirmedAt" | "ageLastChangedAt"
+  | "id"
+  | "twoFactorEnabled"
+  | "selfReportedAge"
+  | "ageConfirmedAt"
+  | "ageLastChangedAt"
+  | "lat"
+  | "lng"
+  | "travelRadiusMiles"
 > & { password: string };
 
 type AuthResult = { ok: true } | { ok: false; error: string };
@@ -64,6 +74,9 @@ type UserRow = {
   zip: string | null;
   city: string | null;
   country: string | null;
+  lat: number | null;
+  lng: number | null;
+  travel_radius_miles: number | null;
   avatar_uri: string | null;
   bio: string | null;
   plan: string | null;
@@ -87,6 +100,9 @@ function rowToAccount(row: UserRow): StoredAccount {
     zip: row.zip ?? "",
     city: row.city ?? "",
     country: row.country ?? "",
+    lat: row.lat ?? null,
+    lng: row.lng ?? null,
+    travelRadiusMiles: row.travel_radius_miles ?? null,
     // Reaching this row at all means the signup flow's required checkbox already ran.
     acceptedTerms: true,
     twoFactorEnabled: row.two_factor_enabled,
@@ -204,6 +220,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       zip: input.zip,
       city: input.city,
       country: input.country,
+      lat: null,
+      lng: null,
+      travelRadiusMiles: null,
       acceptedTerms: true,
       twoFactorEnabled: false,
       avatarUri: input.avatarUri,
@@ -261,6 +280,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (patch.zip !== undefined) dbPatch.zip = patch.zip;
     if (patch.city !== undefined) dbPatch.city = patch.city;
     if (patch.country !== undefined) dbPatch.country = patch.country;
+    if (patch.lat !== undefined) dbPatch.lat = patch.lat;
+    if (patch.lng !== undefined) dbPatch.lng = patch.lng;
+    if (patch.travelRadiusMiles !== undefined) dbPatch.travel_radius_miles = patch.travelRadiusMiles;
     if (patch.avatarUri !== undefined) dbPatch.avatar_uri = patch.avatarUri;
     if (patch.bio !== undefined) dbPatch.bio = patch.bio;
     if (patch.plan !== undefined) dbPatch.plan = patch.plan;

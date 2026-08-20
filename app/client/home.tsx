@@ -8,11 +8,13 @@ import { WorkerListingCard } from "../../src/components/WorkerListingCard";
 import { EmptyState } from "../../src/components/EmptyState";
 import { ActionSheet, type ActionSheetOption } from "../../src/components/ActionSheet";
 import { useRolePalette } from "../../src/theme/useRolePalette";
+import { useAuth } from "../../src/context/AuthContext";
 import { useClientData } from "../../src/context/ClientDataContext";
 import { useJobs } from "../../src/context/JobsContext";
 import { useMessages } from "../../src/context/MessagesContext";
 import { useThemeVars } from "../../src/theme/useThemeVars";
 import { categories, type NearbyWorker } from "../../src/data/clientMock";
+import { geocodeLocation } from "../../src/lib/geocode";
 import type { PriceType } from "../../src/data/workerMock";
 
 function LocationModal({
@@ -93,7 +95,8 @@ export default function ClientDiscover() {
   const insets = useSafeAreaInsets();
   const palette = useRolePalette();
   const router = useRouter();
-  const { profile, location, updateLocation, nearbyWorkers } = useClientData();
+  const { profile, location, updateLocation, nearbyWorkers, refreshNearbyWorkers } = useClientData();
+  const { updateAccount } = useAuth();
   const { jobs, requestJob } = useJobs();
   const { ensureConversation } = useMessages();
   const [query, setQuery] = useState("");
@@ -117,7 +120,10 @@ export default function ClientDiscover() {
     })
     .sort((a, b) => {
       switch (sort) {
-        case "distance": return a.distanceMiles - b.distanceMiles;
+        case "distance":
+          if (a.distanceMiles == null) return b.distanceMiles == null ? 0 : 1;
+          if (b.distanceMiles == null) return -1;
+          return a.distanceMiles - b.distanceMiles;
         case "rating": return b.rating - a.rating;
         case "priceHigh": return priceOf(b) - priceOf(a);
         case "priceLow": return priceOf(a) - priceOf(b);
@@ -250,6 +256,12 @@ export default function ClientDiscover() {
         onSave={(zip, city) => {
           updateLocation({ zip, city });
           setLocationOpen(false);
+          // Geocode in the background so the modal doesn't block on Mapbox — distance just stays
+          // "—" until this resolves and refreshNearbyWorkers() re-fetches with real coordinates.
+          geocodeLocation(zip, city).then((coords) => {
+            updateAccount({ zip, city, lat: coords?.lat ?? null, lng: coords?.lng ?? null });
+            refreshNearbyWorkers();
+          });
         }}
       />
 
