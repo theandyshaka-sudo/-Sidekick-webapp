@@ -13,6 +13,13 @@ import { supabase } from "../src/lib/supabase";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Wherever this app is actually running (the Vercel domain in production, localhost in dev) —
+// used so emailed links/redirects don't fall back to Supabase's dashboard-configured Site URL,
+// which is still localhost. Still needs that domain added to Supabase's Redirect URLs allow list.
+function appOrigin(): string | undefined {
+  return typeof window !== "undefined" ? window.location.origin : undefined;
+}
+
 // Enters when 2-step verification is already ON for this account: password already checked out,
 // this asks for the one-time code Supabase just emailed via signInWithOtp (see submit()) and
 // confirms it with verifyOtp before letting the login through.
@@ -47,23 +54,26 @@ function TwoFactorCodeModal({
   const resend = async () => {
     setError(null);
     setResent(false);
-    await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
+    await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false, emailRedirectTo: appOrigin() } });
     setResent(true);
   };
 
   return (
     <Modal visible transparent animationType="fade">
       <View className="flex-1 justify-center bg-black/50 px-6" style={themeVars}>
-        <View className="rounded-3xl p-6" style={{ backgroundColor: palette.surface }}>
+        <View className="rounded-3xl p-6" style={{ backgroundColor: palette.surface, position: "relative" }}>
+          <Pressable
+            onPress={onBack}
+            hitSlop={8}
+            style={{ position: "absolute", top: 16, right: 16, zIndex: 1 }}
+            className="h-9 w-9 items-center justify-center rounded-full border border-border bg-surface active:opacity-70"
+          >
+            <Ionicons name="chevron-back" size={18} color={palette.text} />
+          </Pressable>
           <View className="mb-4 h-14 w-14 items-center justify-center rounded-2xl" style={{ backgroundColor: palette.primarySoft }}>
             <Ionicons name="mail-open-outline" size={26} color={palette.primary} />
           </View>
-          <View className="flex-row items-center justify-between">
-            <Text className="text-xl font-bold text-text">Enter your code</Text>
-            <Pressable onPress={onBack} hitSlop={8} className="active:opacity-60">
-              <Ionicons name="close" size={22} color={palette.muted} />
-            </Pressable>
-          </View>
+          <Text className="text-xl font-bold text-text">Enter your code</Text>
           <Text className="mt-2 text-sm leading-6 text-muted">
             We emailed a one-time code to <Text className="font-semibold text-text">{email}</Text>.
           </Text>
@@ -85,16 +95,11 @@ function TwoFactorCodeModal({
           <View className="mt-6">
             <PrimaryButton label="Verify" onPress={verify} loading={verifying} disabled={code.length < 6} />
           </View>
-          <View className="mt-4 flex-row items-center justify-center gap-6">
-            <Pressable onPress={onBack} className="items-center py-1 active:opacity-60">
-              <Text className="text-sm font-semibold text-muted">Back</Text>
-            </Pressable>
-            <Pressable onPress={resend} className="items-center py-1 active:opacity-60">
-              <Text className="text-sm font-semibold" style={{ color: palette.primary }}>
-                {resent ? "Code resent" : "Resend code"}
-              </Text>
-            </Pressable>
-          </View>
+          <Pressable onPress={resend} className="mt-4 items-center py-1 active:opacity-60">
+            <Text className="text-sm font-semibold" style={{ color: palette.primary }}>
+              {resent ? "Code resent" : "Resend code"}
+            </Text>
+          </Pressable>
         </View>
       </View>
     </Modal>
@@ -227,7 +232,10 @@ export default function Login() {
     if (result.twoFactorPending) {
       // Password already checked out — email a one-time code and gate the rest of login on it.
       // currentUser stays null (AuthContext.logIn withheld it) until completeTwoFactorLogin runs.
-      await supabase.auth.signInWithOtp({ email: account.email, options: { shouldCreateUser: false } });
+      await supabase.auth.signInWithOtp({
+        email: account.email,
+        options: { shouldCreateUser: false, emailRedirectTo: appOrigin() },
+      });
       setPendingTwoFactorAccount(account);
     } else {
       // Offer to turn 2FA on for next time; this login itself already proved password ownership.
