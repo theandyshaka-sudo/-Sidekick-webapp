@@ -1,5 +1,59 @@
 @AGENTS.md
 
+## Session notes — where we left off (2026-08-21)
+
+Fixed a batch of bugs the user found while testing the 2026-08-20 work on their phone (web build
+via Vercel, not Expo Go — see below). All pushed (`0373e70`), no new migrations needed.
+
+**⚠️ TWO MANUAL SUPABASE DASHBOARD STEPS STILL NEEDED — the code is done but won't fully work
+until these are set, ask the user to confirm before testing 2FA / password reset again:**
+1. Authentication → URL Configuration → add the Vercel deployment's domain to **Redirect URLs**
+   (e.g. `https://<their-vercel-domain>/**`) — `requestPasswordReset` now passes an explicit
+   `redirectTo`, but Supabase silently falls back to the Site URL (still localhost) if the target
+   isn't on this allow list.
+2. Authentication → Email Templates → Magic Link — the user wants the 2FA code email to contain
+   only a plain 6-digit code, no clickable link. Edit that template to use `{{ .Token }}` instead
+   of `{{ .ConfirmationURL }}` (this template is also what `signInWithOtp` uses for the 2FA email).
+
+**Fixed today:**
+- **Accent color picker** (`src/components/AccentColorPicker.tsx`): dragging the saturation/value
+  square right after moving the hue slider (or vice versa) snapped back to whatever hue was
+  current at mount — the PanResponder handlers were frozen via `useRef` and closed over stale
+  state. Now reads current hue/sat/val through a ref that's refreshed every render.
+- **Stray "service/[id]" tab** on the worker bottom nav: `app/worker/service/[id].tsx` wasn't
+  explicitly registered in `app/worker/_layout.tsx`'s `<Tabs>`, so expo-router auto-added it as a
+  visible tab. Added `<Tabs.Screen name="service/[id]" options={{ href: null }} />` to hide it.
+- **2FA wasn't actually gating login** — the real bug behind "2FA just let me straight into the
+  app": `signInWithPassword` establishes a full Supabase session immediately, and the
+  `onAuthStateChange` listener in `AuthContext` was unconditionally setting `currentUser` from
+  that session the moment it fired, regardless of whether the emailed one-time code had been
+  entered yet. `logIn()` now sets a `pendingTwoFactorRef` before calling `signInWithPassword`; the
+  listener skips `setCurrentUser` while that ref is true; a new `completeTwoFactorLogin(account)`
+  is what actually reveals the account, called from `login.tsx` only after `verifyOtp` succeeds.
+  Also added a way to back out of the OTP screen (`cancelTwoFactorLogin` — signs out the
+  half-open session), since there was previously no way off that screen if stuck.
+- **Hourly job completion math**: "Mark complete" on an hourly job asked for a dollar amount
+  labeled "$X/hr" but used it directly as the total price — now asks "hours worked" and computes
+  rate × hours as the completed price (`app/worker/jobs.tsx` `ScheduledCard`).
+- **Password reset email → localhost**: `requestPasswordReset` now passes `redirectTo:
+  window.location.origin + "/reset-password"` instead of relying on Supabase's dashboard Site URL
+  default. Added `app/reset-password.tsx` to actually handle that link — since
+  `detectSessionInUrl: false` is set in `src/lib/supabase.ts`, it manually parses the
+  access/refresh tokens out of the URL `#hash` and calls `setSession` before showing a new-password
+  form. Still needs manual step 1 above to actually take effect.
+- **Settings discoverability**: renamed "Security" → "Privacy & Security" in both profile screens
+  and the screen header — the password/username/email controls the user was looking for
+  ("a tab like privacy... with your password info") already existed there under the old name.
+
+**Not done / deliberately skipped:** nothing dropped from this batch — everything the user listed
+was addressed in code where it was a code problem. The 2FA "should just give a 6-digit code, no
+redirect" behavior depends entirely on manual step 2 above, not on anything further in code.
+
+**Learned about this deployment:** this repo is deployed to **Vercel as a web build**
+(`expo export -p web` per `vercel.json`), not distributed via Expo Go or a native build (no
+`eas.json` in the repo) — the user tests it by opening the Vercel URL in their phone's browser.
+Keep that in mind before suggesting Expo Go / QR-code-based testing flows.
+
 ## Session notes — where we left off (2026-08-20)
 
 Read this first so you don't have to be re-briefed. Supabase migrations listed below have
