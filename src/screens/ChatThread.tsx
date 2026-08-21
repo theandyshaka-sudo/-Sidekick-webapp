@@ -227,7 +227,7 @@ export function ChatThread() {
                 message.fromMe ? "self-end bg-primary" : "self-start border border-border bg-surface"
               }`}
             >
-              <Text className={message.fromMe ? "text-primary-fg" : "text-text"}>{message.text}</Text>
+              <Text className={`text-base ${message.fromMe ? "text-primary-fg" : "text-text"}`}>{message.text}</Text>
               <View className="mt-1 flex-row items-center gap-1">
                 <Text className={`text-[10px] ${message.fromMe ? "text-primary-fg/70" : "text-muted"}`}>{message.time}</Text>
                 {message.edited ? (

@@ -4,24 +4,29 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { ScreenHeader } from "../../../src/components/settings/ScreenHeader";
 import { Avatar } from "../../../src/components/Avatar";
+import { ActionSheet, type ActionSheetOption } from "../../../src/components/ActionSheet";
 import { FormField } from "../../../src/components/FormField";
 import { PrimaryButton } from "../../../src/components/PrimaryButton";
+import { useAuth } from "../../../src/context/AuthContext";
 import { useGroups } from "../../../src/context/GroupsContext";
 import { useRolePalette } from "../../../src/theme/useRolePalette";
-
-const PHOTO_OPTIONS = ["", ...[20, 33, 48, 56, 64].map((n) => `https://picsum.photos/seed/group-${n}/200/200`)];
+import { pickAndUploadPhoto } from "../../../src/lib/uploadPhoto";
 
 export default function EditGroup() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const palette = useRolePalette();
+  const { currentUser } = useAuth();
   const g = useGroups();
   const group = g.getGroup(id);
 
   const [name, setName] = useState(group?.name ?? "");
   const [description, setDescription] = useState(group?.description ?? "");
+  const [rules, setRules] = useState(group?.rules ?? "");
   const [isPrivate, setIsPrivate] = useState(group?.isPrivate ?? false);
-  const [photoIndex, setPhotoIndex] = useState(Math.max(0, PHOTO_OPTIONS.indexOf(group?.avatarUri ?? "")));
+  const [avatarUri, setAvatarUri] = useState(group?.avatarUri ?? "");
+  const [photoOpen, setPhotoOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!group) {
@@ -30,9 +35,22 @@ export default function EditGroup() {
     );
   }
 
+  const pickPhoto = async (source: "camera" | "library") => {
+    if (!currentUser) return;
+    setUploading(true);
+    const url = await pickAndUploadPhoto(source, currentUser.id, "group");
+    setUploading(false);
+    if (url) setAvatarUri(url);
+  };
+
+  const photoOptions: ActionSheetOption[] = [
+    { label: "Take photo", icon: "camera-outline", onPress: () => pickPhoto("camera") },
+    { label: "Choose from library", icon: "image-outline", onPress: () => pickPhoto("library") },
+  ];
+
   const save = () => {
     if (!name.trim()) return setError("Give your group a name.");
-    g.updateGroup(group.id, { name: name.trim(), description: description.trim(), avatarUri: PHOTO_OPTIONS[photoIndex], isPrivate });
+    g.updateGroup(group.id, { name: name.trim(), description: description.trim(), avatarUri, isPrivate, rules: rules.trim() });
     router.back();
   };
 
@@ -42,16 +60,30 @@ export default function EditGroup() {
       <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 40 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View className="mb-6 items-center">
           <View>
-            <Avatar uri={PHOTO_OPTIONS[photoIndex]} name={name || "Group"} size={88} />
-            <Pressable onPress={() => setPhotoIndex((i) => (i + 1) % PHOTO_OPTIONS.length)} className="absolute -bottom-1 -right-1 h-8 w-8 items-center justify-center rounded-full border-2 border-bg bg-primary">
+            <Avatar uri={avatarUri} name={name || "Group"} size={88} />
+            <Pressable
+              onPress={() => setPhotoOpen(true)}
+              disabled={uploading}
+              className="absolute -bottom-1 -right-1 h-8 w-8 items-center justify-center rounded-full border-2 border-bg bg-primary"
+              style={{ opacity: uploading ? 0.6 : 1 }}
+            >
               <Ionicons name="camera" size={14} color={palette.primaryFg} />
             </Pressable>
           </View>
-          <Text className="mt-2 text-xs text-muted">Tap the camera to change the group photo</Text>
+          <Text className="mt-2 text-xs text-muted">{uploading ? "Uploading…" : "Tap the camera to change the group photo"}</Text>
         </View>
 
         <FormField label="Group name" value={name} onChangeText={(t) => { setName(t); setError(null); }} placeholder="Group name" error={error ?? undefined} />
         <FormField label="Description" value={description} onChangeText={setDescription} placeholder="What's this group about?" multiline numberOfLines={3} style={{ minHeight: 80, textAlignVertical: "top" }} />
+        <FormField
+          label="Rules"
+          value={rules}
+          onChangeText={setRules}
+          placeholder="Be kind. No spam. Stay on topic…"
+          multiline
+          numberOfLines={4}
+          style={{ minHeight: 100, textAlignVertical: "top" }}
+        />
 
         <Text className="mb-2 mt-1 text-xs font-semibold uppercase tracking-wider text-muted">Privacy</Text>
         <View className="gap-2.5">
@@ -72,6 +104,8 @@ export default function EditGroup() {
 
         <View className="mt-6"><PrimaryButton label="Save changes" onPress={save} /></View>
       </ScrollView>
+
+      <ActionSheet visible={photoOpen} title="Group photo" options={photoOptions} onClose={() => setPhotoOpen(false)} />
     </View>
   );
 }

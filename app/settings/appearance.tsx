@@ -15,10 +15,11 @@ const SCHEME_OPTIONS: Array<{ value: ColorScheme; label: string; icon: keyof typ
 
 const ACCENT_PRESETS = ["#DC2626", "#EA580C", "#D97706", "#65A30D", "#059669", "#0891B2", "#2563EB", "#7C3AED", "#DB2777"];
 
-const TEXT_SIZE_OPTIONS: Array<{ value: TextSize; label: string; sample: string }> = [
-  { value: "small", label: "Small", sample: "Aa" },
-  { value: "default", label: "Default", sample: "Aa" },
-  { value: "large", label: "Large", sample: "Aa" },
+const TEXT_SIZE_OPTIONS: Array<{ value: TextSize; label: string; sub: string; sample: string; previewSize: number }> = [
+  { value: "small", label: "Small", sub: "50%", sample: "Aa", previewSize: 13 },
+  { value: "default", label: "Medium", sub: "100%", sample: "Aa", previewSize: 21 },
+  { value: "large", label: "Large", sub: "150%", sample: "Aa", previewSize: 29 },
+  { value: "xlarge", label: "Extra Large", sub: "200%", sample: "Aa", previewSize: 37 },
 ];
 
 export default function Appearance() {
@@ -94,20 +95,21 @@ export default function Appearance() {
         ) : null}
 
         <Text className="mb-3 mt-7 text-sm font-semibold uppercase tracking-wider text-muted">Text size</Text>
-        <View className="flex-row gap-3">
+        <View className="flex-row gap-2.5">
           {TEXT_SIZE_OPTIONS.map((option) => {
             const selected = textSize === option.value;
             return (
               <Pressable
                 key={option.value}
                 onPress={() => setTextSize(option.value)}
-                className="flex-1 items-center gap-2 rounded-2xl border bg-surface py-4 active:opacity-70"
+                className="flex-1 items-center gap-1.5 rounded-2xl border bg-surface py-4 active:opacity-70"
                 style={{ borderColor: selected ? palette.primary : palette.border }}
               >
-                <Text className="font-bold text-text" style={{ fontSize: option.value === "small" ? 16 : option.value === "large" ? 26 : 21 }}>
+                <Text className="font-bold text-text" style={{ fontSize: option.previewSize }}>
                   {option.sample}
                 </Text>
                 <Text className="text-xs font-medium text-muted">{option.label}</Text>
+                <Text className="text-[10px] text-muted">{option.sub}</Text>
                 {selected ? <Ionicons name="checkmark-circle" size={16} color={palette.primary} /> : null}
               </Pressable>
             );

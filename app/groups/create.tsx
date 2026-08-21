@@ -4,14 +4,14 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { ScreenHeader } from "../../src/components/settings/ScreenHeader";
 import { Avatar } from "../../src/components/Avatar";
+import { ActionSheet, type ActionSheetOption } from "../../src/components/ActionSheet";
 import { FormField } from "../../src/components/FormField";
 import { PrimaryButton } from "../../src/components/PrimaryButton";
 import { useAuth } from "../../src/context/AuthContext";
 import { useGroups } from "../../src/context/GroupsContext";
 import { useRolePalette } from "../../src/theme/useRolePalette";
 import { planById } from "../../src/data/plans";
-
-const PHOTO_OPTIONS = ["", ...[20, 33, 48, 56, 64].map((n) => `https://picsum.photos/seed/group-${n}/200/200`)];
+import { pickAndUploadPhoto } from "../../src/lib/uploadPhoto";
 
 export default function CreateGroup() {
   const router = useRouter();
@@ -28,9 +28,24 @@ export default function CreateGroup() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
-  const [photoIndex, setPhotoIndex] = useState(0);
+  const [avatarUri, setAvatarUri] = useState("");
+  const [photoOpen, setPhotoOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+
+  const pickPhoto = async (source: "camera" | "library") => {
+    if (!currentUser) return;
+    setUploading(true);
+    const url = await pickAndUploadPhoto(source, currentUser.id, "group");
+    setUploading(false);
+    if (url) setAvatarUri(url);
+  };
+
+  const photoOptions: ActionSheetOption[] = [
+    { label: "Take photo", icon: "camera-outline", onPress: () => pickPhoto("camera") },
+    { label: "Choose from library", icon: "image-outline", onPress: () => pickPhoto("library") },
+  ];
 
   const submit = async () => {
     if (!name.trim()) return setError("Give your group a name.");
@@ -40,7 +55,7 @@ export default function CreateGroup() {
         name: name.trim(),
         description: description.trim(),
         isPrivate,
-        avatarUri: PHOTO_OPTIONS[photoIndex],
+        avatarUri,
       });
       router.replace(`/groups/${id}`);
     } catch {
@@ -80,15 +95,17 @@ export default function CreateGroup() {
       <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 40 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View className="mb-6 items-center">
           <View>
-            <Avatar uri={PHOTO_OPTIONS[photoIndex]} name={name || "New group"} size={88} />
+            <Avatar uri={avatarUri} name={name || "New group"} size={88} />
             <Pressable
-              onPress={() => setPhotoIndex((i) => (i + 1) % PHOTO_OPTIONS.length)}
+              onPress={() => setPhotoOpen(true)}
+              disabled={uploading}
               className="absolute -bottom-1 -right-1 h-8 w-8 items-center justify-center rounded-full border-2 border-bg bg-primary"
+              style={{ opacity: uploading ? 0.6 : 1 }}
             >
               <Ionicons name="camera" size={14} color={palette.primaryFg} />
             </Pressable>
           </View>
-          <Text className="mt-2 text-xs text-muted">Tap the camera to change the group photo</Text>
+          <Text className="mt-2 text-xs text-muted">{uploading ? "Uploading…" : "Tap the camera to add a group photo"}</Text>
         </View>
 
         <FormField label="Group name" value={name} onChangeText={(t) => { setName(t); setError(null); }} placeholder="Lawn Care Starters" error={error ?? undefined} />
@@ -132,6 +149,8 @@ export default function CreateGroup() {
         </View>
         <Text className="mt-3 text-center text-xs text-muted">You'll be the group's president.</Text>
       </ScrollView>
+
+      <ActionSheet visible={photoOpen} title="Group photo" options={photoOptions} onClose={() => setPhotoOpen(false)} />
     </View>
   );
 }

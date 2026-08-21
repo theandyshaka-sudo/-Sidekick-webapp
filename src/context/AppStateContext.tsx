@@ -50,7 +50,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setLegalAcceptedState(storedLegal === "true");
       if (storedScheme === "light" || storedScheme === "dark") setColorSchemeState(storedScheme);
       if (storedAccent) setAccentColorState(storedAccent);
-      if (storedTextSize === "small" || storedTextSize === "default" || storedTextSize === "large") {
+      if (storedTextSize === "small" || storedTextSize === "default" || storedTextSize === "large" || storedTextSize === "xlarge") {
         setTextSizeState(storedTextSize);
       }
       setIsLoading(false);

@@ -5,6 +5,7 @@ import { AdminHeader } from "../../src/components/AdminHeader";
 import { Badge } from "../../src/components/Badge";
 import { ActionSheet, type ActionSheetOption } from "../../src/components/ActionSheet";
 import { useMessages } from "../../src/context/MessagesContext";
+import { useGroups } from "../../src/context/GroupsContext";
 import { useRolePalette } from "../../src/theme/useRolePalette";
 import { useThemeVars } from "../../src/theme/useThemeVars";
 import type { PlatformReport, ReportReason } from "../../src/data/messagesMock";
@@ -159,6 +160,49 @@ function ReportCard({ report, onViewMessages, onBan }: { report: PlatformReport;
   );
 }
 
+// Flagged group chat messages (auto-flagged by a wordlist check on send — see
+// src/lib/moderateText.ts). Only shows flags from groups this account happens to be a member of,
+// since there's no real backend admin role yet — see the migration's module comment.
+function FlaggedGroupMessages() {
+  const palette = useRolePalette();
+  const g = useGroups();
+  const flagged = g.groups.flatMap((group) =>
+    group.messages.filter((m) => m.flagged && !m.deleted).map((m) => ({ group, message: m }))
+  );
+
+  if (flagged.length === 0) return null;
+
+  return (
+    <View className="mb-6">
+      <Text className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted">
+        Flagged group messages ({flagged.length})
+      </Text>
+      <View className="gap-3">
+        {flagged.map(({ group, message }) => (
+          <View key={message.id} className="rounded-2xl border border-border bg-surface p-4">
+            <View className="mb-1 flex-row items-center gap-1.5">
+              <Ionicons name="flag" size={12} color={palette.danger} />
+              <Text className="text-xs font-semibold" style={{ color: palette.danger }}>{group.name}</Text>
+              <Text className="text-xs text-muted">· {message.senderName} · {message.time}</Text>
+            </View>
+            <Text className="text-sm text-text">{message.text}</Text>
+            <View className="mt-3 flex-row gap-2 border-t border-border pt-3">
+              <Pressable onPress={() => g.unflagMessage(group.id, message.id)} className="flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border border-border py-2 active:opacity-70">
+                <Ionicons name="checkmark-outline" size={14} color={palette.text} />
+                <Text className="text-xs font-semibold text-text">Dismiss flag</Text>
+              </Pressable>
+              <Pressable onPress={() => g.deleteMessage(group.id, message.id)} className="flex-1 flex-row items-center justify-center gap-1.5 rounded-xl py-2 active:opacity-80" style={{ backgroundColor: palette.danger }}>
+                <Ionicons name="trash-outline" size={14} color="#FFFFFF" />
+                <Text className="text-xs font-semibold text-white">Delete</Text>
+              </Pressable>
+            </View>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 export default function DeveloperReports() {
   const palette = useRolePalette();
   const { getAllReports, banMessaging } = useMessages();
@@ -203,6 +247,8 @@ export default function DeveloperReports() {
           <StatBox icon="albums-outline" value={String(stats.total)} label="Total reports" />
           <StatBox icon="trending-up" value={stats.topReason} label="Top reason" />
         </View>
+
+        <FlaggedGroupMessages />
 
         <View className="mb-3 flex-row items-center justify-between">
           <Text className="text-sm font-semibold uppercase tracking-wider text-muted">Submitted reports</Text>

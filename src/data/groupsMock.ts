@@ -61,9 +61,28 @@ export type GroupMessage = {
   senderName: string;
   senderAvatar: string;
   text: string;
+  imageUrl?: string;
   time: string;
   edited?: boolean;
   deleted?: boolean;
+  flagged?: boolean;
+};
+
+export type GroupAnnouncement = {
+  id: string;
+  authorId: string;
+  authorName: string;
+  text: string;
+  createdAt: string;
+};
+
+export type GroupFaq = {
+  id: string;
+  authorId: string;
+  authorName: string;
+  question: string;
+  answer: string;
+  createdAt: string;
 };
 
 export type JoinRequest = {
@@ -82,9 +101,12 @@ export type Group = {
   avatarUri: string;
   isPrivate: boolean;
   ownerId: string;
+  rules: string;
   members: GroupMember[];
   messages: GroupMessage[];
   requests: JoinRequest[];
+  announcements: GroupAnnouncement[];
+  faqs: GroupFaq[];
   roles: GroupRole[];
   bans: string[]; // userIds blocked from rejoining
   logs: GroupLog[]; // audit trail (president/staff only)

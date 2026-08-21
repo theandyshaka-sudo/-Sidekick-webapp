@@ -93,6 +93,15 @@ export default function GroupSettings() {
           </View>
         ) : null}
 
+        {group.ownerId === g.me.userId && group.members.length > 1 ? (
+          <>
+            <Text className="mb-3 mt-7 text-xs font-semibold uppercase tracking-wider text-muted">Ownership</Text>
+            <View className="gap-2.5">
+              <Row icon="swap-horizontal-outline" label="Give up ownership" danger onPress={() => router.push(`/groups/${group.id}/transfer`)} />
+            </View>
+          </>
+        ) : null}
+
         <Text className="mb-3 mt-7 text-xs font-semibold uppercase tracking-wider text-muted">Group</Text>
         <View className="gap-2.5">
           <Row icon="flag-outline" label="Report group" danger onPress={() => setReportOpen(true)} />
