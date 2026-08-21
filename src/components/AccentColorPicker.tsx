@@ -41,20 +41,27 @@ export function AccentColorPicker({ value, onChange }: { value: string; onChange
   const hex = useMemo(() => rgbToHex(hsvToRgb(hue, sat, val)), [hue, sat, val]);
   const hueColor = useMemo(() => rgbToHex(hsvToRgb(hue, 1, 1)), [hue]);
 
+  // The PanResponders below are created once via useRef and never rebuilt, so their handlers close
+  // over whatever hue/sat/val/onChange were current at mount time. Route through refs (mutated on
+  // every render) instead of reading the closed-over values directly, or dragging the square after
+  // moving the hue slider — or vice versa — snaps back to whatever was current on first mount.
+  const latest = useRef({ hue, sat, val, onChange });
+  latest.current = { hue, sat, val, onChange };
+
   const updateFromSquare = (evt: GestureResponderEvent) => {
     const { locationX, locationY } = evt.nativeEvent;
     const s = Math.max(0, Math.min(1, locationX / SQUARE_SIZE));
     const v = Math.max(0, Math.min(1, 1 - locationY / SQUARE_SIZE));
     setSat(s);
     setVal(v);
-    onChange(rgbToHex(hsvToRgb(hue, s, v)));
+    latest.current.onChange(rgbToHex(hsvToRgb(latest.current.hue, s, v)));
   };
 
   const updateFromHue = (evt: GestureResponderEvent) => {
     const { locationX } = evt.nativeEvent;
     const h = Math.max(0, Math.min(1, locationX / SQUARE_SIZE)) * 360;
     setHue(h);
-    onChange(rgbToHex(hsvToRgb(h, sat, val)));
+    latest.current.onChange(rgbToHex(hsvToRgb(h, latest.current.sat, latest.current.val)));
   };
 
   const squareResponder = useRef(

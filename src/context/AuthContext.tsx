@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { supabase } from "../lib/supabase";
 import type { Role } from "./AppStateContext";
 import type { PlanId, BillingCycle } from "../data/plans";
@@ -47,7 +47,9 @@ export type SignUpInput = Omit<
 > & { password: string };
 
 type AuthResult = { ok: true } | { ok: false; error: string };
-type LogInResult = { ok: true; account: StoredAccount } | { ok: false; error: string };
+type LogInResult =
+  | { ok: true; account: StoredAccount; twoFactorPending: boolean }
+  | { ok: false; error: string };
 
 type AuthState = {
   currentUser: StoredAccount | null;
@@ -62,6 +64,11 @@ type AuthState = {
   updatePassword: (password: string) => Promise<AuthResult>;
   setTwoFactor: (enabled: boolean) => Promise<void>;
   requestPasswordReset: (email: string) => Promise<void>;
+  // Called once the emailed one-time code checks out — this is what actually lets a 2FA-gated
+  // login through; until then `currentUser` stays null even though signInWithPassword already
+  // succeeded, so the account isn't "in" yet.
+  completeTwoFactorLogin: (account: StoredAccount) => void;
+  cancelTwoFactorLogin: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -130,6 +137,11 @@ async function fetchAccount(userId: string): Promise<StoredAccount | null> {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<StoredAccount | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  // Set for the window between signInWithPassword succeeding and the 2FA code (if the account has
+  // one) actually being verified. While true, the auth-state listener below must NOT reveal the
+  // account via setCurrentUser, even though Supabase already has a live session for it — otherwise
+  // 2FA is just a UI overlay on top of an already-logged-in session, not a real gate.
+  const pendingTwoFactorRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -149,6 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (active) setCurrentUser(null);
         return;
       }
+      if (pendingTwoFactorRef.current) return;
       const account = await fetchAccount(session.user.id);
       if (active) setCurrentUser(account);
     });
@@ -247,13 +260,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     if (lookupError || !email) return { ok: false, error: "Username incorrect." };
 
+    // Block the auth-state listener from logging the account in the moment the password checks
+    // out — we don't know yet whether 2FA needs to gate this further.
+    pendingTwoFactorRef.current = true;
+
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return { ok: false, error: "Password incorrect." };
+    if (error) {
+      pendingTwoFactorRef.current = false;
+      return { ok: false, error: "Password incorrect." };
+    }
 
     const account = await fetchAccount(data.user.id);
-    if (!account) return { ok: false, error: "Couldn't load your account. Try again." };
+    if (!account) {
+      pendingTwoFactorRef.current = false;
+      return { ok: false, error: "Couldn't load your account. Try again." };
+    }
 
     if (account.role !== role) {
+      pendingTwoFactorRef.current = false;
       await supabase.auth.signOut();
       return {
         ok: false,
@@ -261,8 +285,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     }
 
+    if (account.twoFactorEnabled) {
+      // Stay pending — the caller must call completeTwoFactorLogin() once the emailed code checks
+      // out, or cancelTwoFactorLogin() if they back out.
+      return { ok: true, account, twoFactorPending: true };
+    }
+
+    pendingTwoFactorRef.current = false;
     setCurrentUser(account);
-    return { ok: true, account };
+    return { ok: true, account, twoFactorPending: false };
+  };
+
+  const completeTwoFactorLogin = (account: StoredAccount) => {
+    pendingTwoFactorRef.current = false;
+    setCurrentUser(account);
+  };
+
+  const cancelTwoFactorLogin = async () => {
+    pendingTwoFactorRef.current = false;
+    await supabase.auth.signOut();
   };
 
   const logOut = async () => {
@@ -341,7 +382,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const requestPasswordReset = async (email: string) => {
-    await supabase.auth.resetPasswordForEmail(email);
+    // Without an explicit redirectTo, Supabase falls back to the project's dashboard-configured
+    // Site URL — which for this project is still the local dev server, so the emailed link opens
+    // localhost on whatever device clicks it. Point it at wherever this app is actually running
+    // instead (the Vercel deployment in production, localhost during local dev) — but the target
+    // must also be added to Supabase's Auth → URL Configuration → Redirect URLs allow list, or
+    // Supabase will silently fall back to the Site URL anyway.
+    const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/reset-password` : undefined;
+    await supabase.auth.resetPasswordForEmail(email, redirectTo ? { redirectTo } : undefined);
   };
 
   return (
@@ -358,6 +406,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updatePassword,
         setTwoFactor,
         requestPasswordReset,
+        completeTwoFactorLogin,
+        cancelTwoFactorLogin,
       }}
     >
       {children}

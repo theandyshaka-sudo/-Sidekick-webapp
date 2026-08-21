@@ -6,7 +6,7 @@ import { ScreenHeader } from "../src/components/settings/ScreenHeader";
 import { FormField } from "../src/components/FormField";
 import { PrimaryButton } from "../src/components/PrimaryButton";
 import { useAppState } from "../src/context/AppStateContext";
-import { useAuth } from "../src/context/AuthContext";
+import { useAuth, type StoredAccount } from "../src/context/AuthContext";
 import { useRolePalette } from "../src/theme/useRolePalette";
 import { useThemeVars } from "../src/theme/useThemeVars";
 import { supabase } from "../src/lib/supabase";
@@ -19,9 +19,11 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function TwoFactorCodeModal({
   email,
   onVerified,
+  onBack,
 }: {
   email: string;
   onVerified: () => void;
+  onBack: () => void;
 }) {
   const palette = useRolePalette();
   const themeVars = useThemeVars();
@@ -56,7 +58,12 @@ function TwoFactorCodeModal({
           <View className="mb-4 h-14 w-14 items-center justify-center rounded-2xl" style={{ backgroundColor: palette.primarySoft }}>
             <Ionicons name="mail-open-outline" size={26} color={palette.primary} />
           </View>
-          <Text className="text-xl font-bold text-text">Enter your code</Text>
+          <View className="flex-row items-center justify-between">
+            <Text className="text-xl font-bold text-text">Enter your code</Text>
+            <Pressable onPress={onBack} hitSlop={8} className="active:opacity-60">
+              <Ionicons name="close" size={22} color={palette.muted} />
+            </Pressable>
+          </View>
           <Text className="mt-2 text-sm leading-6 text-muted">
             We emailed a one-time code to <Text className="font-semibold text-text">{email}</Text>.
           </Text>
@@ -78,11 +85,16 @@ function TwoFactorCodeModal({
           <View className="mt-6">
             <PrimaryButton label="Verify" onPress={verify} loading={verifying} disabled={code.length < 6} />
           </View>
-          <Pressable onPress={resend} className="mt-4 items-center py-1 active:opacity-60">
-            <Text className="text-sm font-semibold" style={{ color: palette.primary }}>
-              {resent ? "Code resent" : "Resend code"}
-            </Text>
-          </Pressable>
+          <View className="mt-4 flex-row items-center justify-center gap-6">
+            <Pressable onPress={onBack} className="items-center py-1 active:opacity-60">
+              <Text className="text-sm font-semibold text-muted">Back</Text>
+            </Pressable>
+            <Pressable onPress={resend} className="items-center py-1 active:opacity-60">
+              <Text className="text-sm font-semibold" style={{ color: palette.primary }}>
+                {resent ? "Code resent" : "Resend code"}
+              </Text>
+            </Pressable>
+          </View>
         </View>
       </View>
     </Modal>
@@ -143,8 +155,7 @@ function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
                 <Ionicons name="mail-outline" size={24} color={palette.primary} />
               </View>
               <Text className="text-sm leading-6 text-muted">
-                If an account exists for that email, we've sent a link to reset your password. (Email
-                delivery activates once the backend is connected.)
+                If an account exists for that email, we've sent a link to reset your password.
               </Text>
               <View className="mt-6">
                 <PrimaryButton label="Done" onPress={onClose} />
@@ -178,7 +189,7 @@ export default function Login() {
   const router = useRouter();
   const palette = useRolePalette();
   const { role, setLegalAccepted } = useAppState();
-  const { logIn, setTwoFactor } = useAuth();
+  const { logIn, setTwoFactor, completeTwoFactorLogin, cancelTwoFactorLogin } = useAuth();
   const isWorker = role === "worker";
 
   const [username, setUsername] = useState("");
@@ -189,7 +200,7 @@ export default function Login() {
   const [submitting, setSubmitting] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
   const [showTwoFactor, setShowTwoFactor] = useState(false);
-  const [pendingTwoFactorEmail, setPendingTwoFactorEmail] = useState<string | null>(null);
+  const [pendingTwoFactorAccount, setPendingTwoFactorAccount] = useState<StoredAccount | null>(null);
 
   const homeRoute = isWorker ? "/worker/home" : "/client/home";
 
@@ -213,10 +224,11 @@ export default function Login() {
     const account = result.account;
     // The role profile hydrates from the account automatically (see Worker/ClientDataContext).
     await setLegalAccepted(account.acceptedTerms);
-    if (account.twoFactorEnabled) {
+    if (result.twoFactorPending) {
       // Password already checked out — email a one-time code and gate the rest of login on it.
+      // currentUser stays null (AuthContext.logIn withheld it) until completeTwoFactorLogin runs.
       await supabase.auth.signInWithOtp({ email: account.email, options: { shouldCreateUser: false } });
-      setPendingTwoFactorEmail(account.email);
+      setPendingTwoFactorAccount(account);
     } else {
       // Offer to turn 2FA on for next time; this login itself already proved password ownership.
       setShowTwoFactor(true);
@@ -284,8 +296,18 @@ export default function Login() {
           onSkip={() => router.replace(homeRoute)}
         />
       ) : null}
-      {pendingTwoFactorEmail ? (
-        <TwoFactorCodeModal email={pendingTwoFactorEmail} onVerified={() => router.replace(homeRoute)} />
+      {pendingTwoFactorAccount ? (
+        <TwoFactorCodeModal
+          email={pendingTwoFactorAccount.email}
+          onVerified={() => {
+            completeTwoFactorLogin(pendingTwoFactorAccount);
+            router.replace(homeRoute);
+          }}
+          onBack={async () => {
+            await cancelTwoFactorLogin();
+            setPendingTwoFactorAccount(null);
+          }}
+        />
       ) : null}
     </View>
   );

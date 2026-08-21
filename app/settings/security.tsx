@@ -252,7 +252,7 @@ export default function Security() {
 
   return (
     <View className="flex-1 bg-bg">
-      <ScreenHeader title="Security" />
+      <ScreenHeader title="Privacy & Security" />
       <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
         <Text className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted">
           Two-step verification

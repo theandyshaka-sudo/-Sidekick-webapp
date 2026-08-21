@@ -147,7 +147,7 @@ export default function WorkerProfile() {
         />
         <SettingsRow
           icon="shield-checkmark-outline"
-          label="Security"
+          label="Privacy & Security"
           onPress={() => router.push("/settings/security")}
         />
         <SettingsRow

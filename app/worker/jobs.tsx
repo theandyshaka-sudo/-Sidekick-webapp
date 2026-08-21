@@ -48,8 +48,12 @@ function RequestCard({ job, onMessage, onOffer, onDecline }: { job: Job; onMessa
 
 function ScheduledCard({ job, onComplete }: { job: Job; onComplete: (finalPrice: number) => void }) {
   const palette = useRolePalette();
+  const isHourly = job.priceType === "hour";
   const [editing, setEditing] = useState(false);
   const [amount, setAmount] = useState(String(job.price));
+  const [hours, setHours] = useState("");
+  const hoursNum = Number(hours) || 0;
+  const estimatedTotal = isHourly ? Math.round(hoursNum * job.price * 100) / 100 : Number(amount) || job.price;
 
   return (
     <View className="rounded-2xl border border-border bg-surface p-4">
@@ -63,7 +67,27 @@ function ScheduledCard({ job, onComplete }: { job: Job; onComplete: (finalPrice:
       </View>
 
       <View className="mt-3 border-t border-border pt-3">
-        {editing ? (
+        {editing ? isHourly ? (
+          <View className="gap-2">
+            <Text className="text-xs font-semibold uppercase tracking-wider text-muted">Hours worked</Text>
+            <View className="flex-row items-center gap-2">
+              <View className="flex-1 flex-row items-center gap-2 rounded-xl border border-border bg-bg px-3 py-2">
+                <TextInput
+                  value={hours}
+                  onChangeText={(t) => setHours(t.replace(/[^0-9.]/g, ""))}
+                  placeholder="0"
+                  placeholderTextColor={palette.muted}
+                  keyboardType="decimal-pad"
+                  autoFocus
+                  className="flex-1 text-base text-text"
+                />
+                <Text className="text-sm text-muted">hrs · ${job.price}/hr</Text>
+              </View>
+              <PrimaryButton label="Complete" onPress={() => onComplete(estimatedTotal)} disabled={hoursNum <= 0} />
+            </View>
+            <Text className="text-xs text-muted">Estimated earnings: ${estimatedTotal.toFixed(2)}</Text>
+          </View>
+        ) : (
           <View className="gap-2">
             <Text className="text-xs font-semibold uppercase tracking-wider text-muted">Final amount collected</Text>
             <View className="flex-row items-center gap-2">
@@ -76,7 +100,6 @@ function ScheduledCard({ job, onComplete }: { job: Job; onComplete: (finalPrice:
                   autoFocus
                   className="flex-1 text-base text-text"
                 />
-                <Text className="text-sm text-muted">{job.priceType === "hour" ? "/hr" : ""}</Text>
               </View>
               <PrimaryButton label="Complete" onPress={() => onComplete(Number(amount) || job.price)} />
             </View>

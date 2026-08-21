@@ -69,6 +69,7 @@ export default function WorkerLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} />,
         }}
       />
+      <Tabs.Screen name="service/[id]" options={{ href: null }} />
     </Tabs>
   );
 }
