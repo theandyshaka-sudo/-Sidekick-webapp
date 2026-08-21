@@ -147,13 +147,16 @@ function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <View className="flex-1 justify-center bg-black/50 px-6" style={themeVars}>
-        <View className="rounded-3xl p-6" style={{ backgroundColor: palette.surface }}>
-          <View className="mb-4 flex-row items-center justify-between">
-            <Text className="text-lg font-bold text-text">Reset your password</Text>
-            <Pressable onPress={onClose} hitSlop={8}>
-              <Ionicons name="close" size={22} color={palette.muted} />
-            </Pressable>
-          </View>
+        <View className="rounded-3xl p-6" style={{ backgroundColor: palette.surface, position: "relative" }}>
+          <Pressable
+            onPress={onClose}
+            hitSlop={8}
+            style={{ position: "absolute", top: 16, right: 16, zIndex: 1 }}
+            className="h-9 w-9 items-center justify-center rounded-full border border-border bg-surface active:opacity-70"
+          >
+            <Ionicons name="chevron-back" size={18} color={palette.text} />
+          </Pressable>
+          <Text className="mb-4 text-lg font-bold text-text">Reset your password</Text>
           {sent ? (
             <>
               <View className="mb-3 h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: palette.primarySoft }}>
