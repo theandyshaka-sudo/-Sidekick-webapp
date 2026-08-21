@@ -30,16 +30,23 @@ export default function CreateGroup() {
   const [isPrivate, setIsPrivate] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
     if (!name.trim()) return setError("Give your group a name.");
-    const id = createGroup({
-      name: name.trim(),
-      description: description.trim(),
-      isPrivate,
-      avatarUri: PHOTO_OPTIONS[photoIndex],
-    });
-    router.replace(`/groups/${id}`);
+    setCreating(true);
+    try {
+      const id = await createGroup({
+        name: name.trim(),
+        description: description.trim(),
+        isPrivate,
+        avatarUri: PHOTO_OPTIONS[photoIndex],
+      });
+      router.replace(`/groups/${id}`);
+    } catch {
+      setCreating(false);
+      setError("Something went wrong creating the group. Try again.");
+    }
   };
 
   // Gate: plan doesn't allow creating groups, or the limit is reached.
@@ -121,7 +128,7 @@ export default function CreateGroup() {
         </View>
 
         <View className="mt-6">
-          <PrimaryButton label="Create group" onPress={submit} />
+          <PrimaryButton label="Create group" onPress={submit} loading={creating} />
         </View>
         <Text className="mt-3 text-center text-xs text-muted">You'll be the group's president.</Text>
       </ScrollView>

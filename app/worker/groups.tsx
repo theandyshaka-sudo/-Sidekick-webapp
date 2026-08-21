@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { ScrollView, Text, View, Pressable } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -63,7 +64,11 @@ export default function WorkerGroups() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const palette = useRolePalette();
-  const { myGroups, discoverGroups, joinGroup, requestJoin, hasRequested, atJoinLimit, joinLimit, joinedCount } = useGroups();
+  const { myGroups, discoverGroups, joinGroup, requestJoin, hasRequested, atJoinLimit, joinLimit, joinedCount, refreshGroups } = useGroups();
+
+  useEffect(() => {
+    refreshGroups();
+  }, []);
 
   const open = (id: string) => router.push(`/groups/${id}`);
 

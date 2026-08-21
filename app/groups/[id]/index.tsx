@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -28,6 +28,12 @@ export default function GroupDetail() {
   const { ensureConversation, fileReport } = useMessages();
 
   const group = g.getGroup(id);
+
+  useEffect(() => {
+    g.refreshGroups();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
   const [tab, setTab] = useState<"chat" | "members">("chat");
   const [draft, setDraft] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
