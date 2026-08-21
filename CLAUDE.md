@@ -2,6 +2,34 @@
 
 ## Session notes — where we left off (2026-08-21)
 
+**⚠️ NEXT STEP WHEN THIS PICKS BACK UP:** `20260821130000_add_groups.sql` was written but the user
+had not confirmed running it in the Supabase SQL Editor as of the last message in this session —
+check before assuming Groups works. Once it's run, Groups (create/join/request/leave/chat) should
+be live; walk the user through testing it end-to-end (two test accounts, one requests to join a
+private group the other owns, chat both ways) before moving to the next mock surface
+(notification/alarm prefs, or full role/permission/ban/log persistence for Groups if the user wants
+to go back and finish that later — see the Groups entry below for exactly what's still mock there).
+
+**Groups — core made real, decorative parts still mock (this session):** `GroupsContext` was
+entirely local/mock before this. Added `groups`, `group_members`, `group_requests`,
+`group_messages` tables + RLS (`supabase/migrations/20260821130000_add_groups.sql`), with
+`create_group` and `accept_group_request` as security-definer RPCs (same pattern as
+`start_conversation`/`my_conversations`). Real now: creating a group, joining a public group
+instantly, requesting to join a private one, canceling/accepting/declining a request, leaving,
+kicking (only enforced server-side for the real DB owner — see caveat below), and sending/editing/
+deleting *your own* group messages. `me.userId` switched from `currentUser.username` to
+`currentUser.id` (real uuid) to match the new tables' foreign keys.
+
+**Still mock/local, by deliberate scope decision (user chose "core first" over "everything at
+once" when asked):** custom roles beyond the built-in president/member split (`createRole`/
+`updateRole`/`deleteRole`), the ban list (`banMember` removes real membership but the ban itself
+doesn't persist, so a banned user could immediately re-request), activity logs, and any
+non-owner "officer" action gated only by the mock power system (e.g. an officer with the mock
+"kick" power kicking someone, or editing group settings) — these appear to work locally but won't
+survive a page refresh, since only the actual `groups.owner_id` is enforced server-side right now.
+If the user wants this finished later, that means: a `group_roles` table, a `group_bans` table,
+persisting logs, and replacing the owner-only RLS checks with real rank/power lookups.
+
 Fixed a batch of bugs the user found while testing the 2026-08-20 work on their phone (web build
 via Vercel, not Expo Go — see below). All pushed (`0373e70`), no new migrations needed.
 
