@@ -2,12 +2,157 @@
 
 ## Session notes — where we left off (2026-08-21)
 
-**⚠️ NEXT STEP WHEN THIS PICKS BACK UP:** `20260821130000_add_groups.sql` was written but the user
-had not confirmed running it in the Supabase SQL Editor as of the last message in this session —
-check before assuming Groups works. Once it's run, Groups (create/join/request/leave/chat) should
-be live; walk the user through testing it end-to-end (two test accounts, one requests to join a
-private group the other owns, chat both ways) before moving to the next mock surface
-(notification/alarm prefs, or full role/permission/ban/log persistence for Groups if the user wants
+**⚠️ NEXT STEP WHEN THIS PICKS BACK UP — READ THIS FIRST, THE USER HAS NOT TESTED ANY OF TODAY'S
+GROUPS WORK:** the user asked for a large batch of new Groups features late in this session, said
+explicitly they will NOT look at or test any of it today, and won't run any more SQL today either.
+So as of right now: `20260821130000_add_groups.sql` (core groups/members/requests/chat — earlier in
+the day) **was confirmed run** by the user. `20260821150000_add_group_content.sql` (photos,
+announcements, rules, FAQ, flagging, ownership transfer — the later batch) **was written but the
+user has not run it yet and has not tested any of it.** Do not assume any of the second migration's
+features work. First thing next session: confirm whether `20260821150000_add_group_content.sql`
+has been run yet (ask, don't assume), walk them through running it if not (exact SQL Editor steps
+are the same pattern used all session: SQL Editor → New query → paste → Run), then test the whole
+new batch end-to-end (see the checklist near the bottom of this entry) before building anything
+further.
+
+### What's new today, in order
+
+**Bug/UX fixes (all tested and confirmed working by the user before the Groups batch started):**
+- Accent color picker no longer snaps back to orange when dragging the saturation/value square
+  right after moving the hue slider (stale-closure bug in `AccentColorPicker.tsx`'s PanResponder).
+- Removed a stray "service/[id]" tab that was leaking into the worker bottom nav
+  (`app/worker/_layout.tsx` now hides it with `href: null`).
+- **Real bug, now fixed:** 2FA wasn't actually gating login — `signInWithPassword` created a live
+  session immediately, before the emailed code was ever checked, so the OTP screen was cosmetic.
+  `AuthContext.logIn` now withholds `currentUser` via a `pendingTwoFactorRef` until
+  `completeTwoFactorLogin()` runs post-verification. Also fixed: the OTP code box was hard-truncated
+  to 6 digits and required exactly 6, but this Supabase project's actual email OTPs are 8 digits —
+  verification could never succeed. Now accepts up to 10 digits. Also added a proper back/cancel
+  button (top-right circular chevron, matching the rest of the app) since there was previously no
+  way off that screen.
+- Hourly job completion now asks "hours worked" and computes rate × hours, instead of a dollar
+  field mislabeled "$X/hr" that actually just set the total price directly.
+- Password reset: `requestPasswordReset` now passes an explicit `redirectTo` (the running app's own
+  origin) instead of relying on Supabase's dashboard Site URL (which is still localhost); added
+  `app/reset-password.tsx` to actually handle that link (manually parses the URL `#hash` since
+  `detectSessionInUrl: false` is set in `src/lib/supabase.ts`); finishing a reset now signs the
+  session back out instead of silently logging the user in, and shows "Password successfully
+  changed" + a "Go back to log in" button.
+- Settings "Security" renamed "Privacy & Security" (it already had password/email/username, just
+  wasn't labeled in a way the user noticed).
+- Password fields everywhere (login, signup, change password, reset password) now have a
+  click-to-toggle eye icon (`FormField.tsx`) to reveal/hide the typed password.
+- Wrong password on login now clears the field and refocuses it instead of leaving bad text sitting
+  there.
+- **Still needs the user to do two things in the Supabase dashboard, unrelated to any migration —
+  ask if these are done before assuming password-reset/2FA email are fully fixed:**
+  1. Authentication → URL Configuration → Site URL + Redirect URLs set to the Vercel domain
+     (`https://sidekick-webapp.vercel.app`) — confirmed done by the user this session.
+  2. Custom SMTP (Resend) connected + the Magic Link email template edited to show `{{ .Token }}`
+     instead of a link — confirmed set up and the user reported it worked ("2fa was nicer") this
+     session, so treat this as done.
+
+**Groups — first batch, tested and confirmed working by the user:** turned `GroupsContext` from
+100% local/mock into "core real" — `groups`, `group_members`, `group_requests`, `group_messages`
+tables + RLS (`20260821130000_add_groups.sql`), `create_group`/`accept_group_request` as
+security-definer RPCs (same pattern as `start_conversation`). Real: creating a group, joining a
+public group instantly, requesting/accepting/declining/canceling for private groups, leaving,
+kicking (owner-enforced), sending/editing/deleting your own messages. `me.userId` switched from
+`currentUser.username` to the real `currentUser.id` (uuid) to match the new foreign keys.
+
+**Groups — second batch, NOT YET TESTED, migration NOT YET CONFIRMED RUN:** the user asked for a
+big list of additional features in one message and said to build all of it without checking in.
+What was built (`20260821150000_add_group_content.sql` + code, all pushed):
+- **Real group photo**: camera/library upload replacing the old preset-avatar cycling, both on
+  create and edit (`pickAndUploadPhoto`, same helper profile/service photos already use).
+- **Announcements tab**: owner-only broadcast posts, all members can read (`group_announcements`
+  table). Compose modal + delete via long-press (owner only).
+- **Rules tab**: a single rules text blob per group, editable by the owner from the group's Edit
+  screen, visible to everyone including non-members (it's just a plain column on `groups`, not
+  gated behind membership like the other new tables).
+- **FAQ tab**: any member can post a question+answer "common question" entry (`group_faqs` table);
+  author or owner can delete their own.
+- **Chat photos**: the composer now has a camera icon that sends a photo message
+  (`group_messages.image_url`), same upload path as the group avatar.
+- **Auto-flagging**: an obvious-cases wordlist check (`src/lib/moderateText.ts`) runs client-side on
+  every sent message; a flagged message is hidden from everyone except its sender and the real
+  group owner (this is a client-side render decision in `app/groups/[id]/index.tsx`, not an RLS
+  restriction — the row is still fetched, just not shown). Owner can dismiss the flag or delete the
+  message, from either the chat itself or a new "Flagged group messages" section on the developer
+  Reports console (Profile → Help → Developer sign-in, passcode 1458).
+  **Explicitly NOT real moderation** — there's no vision/image scanning at all (no API wired up for
+  that), so a bad photo relies entirely on someone using "Report message" (added to the chat
+  message menu, reuses the existing report flow). The wordlist itself is short and deliberately
+  blunt — expect both false negatives (creative misspellings) and it only covers English profanity.
+- **Ownership transfer**: owner-only "Give up ownership" row in group Settings → pick a member →
+  confirm screen ("cannot take this back after") → `transfer_group_ownership` RPC (security
+  definer, re-verifies caller is really the owner and the target is really a member server-side).
+- **Chat composer** now starts at one line and grows with content instead of defaulting tall.
+- **Real (pre-existing) bug fixed while in there**: both group AND direct-message chat bubble text
+  had a color class but no Tailwind *size* class, so neither ever actually responded to the
+  Appearance → text size setting. Added `text-base` to both (`app/groups/[id]/index.tsx` and
+  `src/screens/ChatThread.tsx`). This was likely also true elsewhere in the app in isolated spots —
+  only did a grep sweep, not an exhaustive per-screen audit, so if the user still finds a spot that
+  doesn't scale with text size, that's the first thing to check.
+- **Text size scale overhaul**: the old three tiers (small/default/large) were barely distinguishable
+  from each other, which is what the user complained about. Replaced with an explicit 4-tier
+  50%/100%/150%/200% scale (`src/theme/textSize.ts`, labeled Small/Medium/Large/Extra Large in
+  Appearance) — every one of the 8 underlying font-size steps is now a literal percentage of the
+  100% column, computed with one `scaled(factor)` helper instead of 3 separately hand-tuned tables.
+  This is a much bigger visual jump than before, by design/request — if it reads as too extreme
+  (especially "Extra Large" at 2×), that's a real possibility worth asking the user about, not
+  necessarily a bug.
+
+**Still local-only/mock in Groups, unchanged, by deliberate scope decision the user made earlier
+this session ("core first" over "everything at once"):** custom roles beyond the built-in
+president/member split, the ban list itself (kicking is real, but nothing stops a banned user from
+immediately re-requesting), activity logs, and any non-owner "officer" action gated only by the
+mock power system (kicking, editing group settings, deleting others' messages) — these appear to
+work locally in the UI but won't survive a page refresh, since only the real `groups.owner_id` is
+enforced server-side. If the user wants this finished: a `group_roles` table, a `group_bans` table,
+persisting logs, and replacing the current owner-only RLS checks with real rank/power lookups.
+
+### Testing checklist for next session (walk the user through this before anything else)
+
+1. Confirm `20260821150000_add_group_content.sql` has been run (ask — don't assume).
+2. Group photo: create or edit a group, tap the camera icon, take/choose a photo, confirm it
+   uploads and shows (not the old preset picsum images).
+3. Announcements: as the group owner, post one from the Announcements tab; switch to a non-owner
+   member account, confirm they can see it but have no post/delete controls.
+4. Rules: as owner, add rules text via Edit group; confirm it shows in the Rules tab, including to
+   an account that isn't even a member of the group yet (Discover → open the group → Rules tab).
+5. FAQ: as any member, add a question+answer entry; confirm another member can see it; confirm
+   delete only works for the entry's author or the owner.
+6. Chat photo: send a photo in group chat from the camera icon next to the composer; confirm it
+   uploads and displays inline.
+7. Flagging: send a message containing an obvious flagged word (check `src/lib/moderateText.ts` for
+   the exact list) from a non-owner account; confirm the OWNER sees it (with the flagged badge) and
+   a THIRD member sees only "Message hidden — under review"; confirm the owner can dismiss the flag
+   or delete it, and that it also shows up on the admin Reports console under "Flagged group
+   messages."
+8. Ownership transfer: as owner with at least one other member, Settings → Give up ownership → pick
+   someone → confirm screen → confirm. Verify the new owner now sees owner-only controls (Edit
+   group, Announcements compose, Give up ownership) and the old owner no longer does.
+9. Chat composer: confirm it now starts as a single line and grows as you type a longer message.
+10. Text size: cycle through all four Appearance → Text size options and confirm the jump between
+    them is now obviously visible (this was the whole point of the change) — including inside group
+    and direct-message chat bubbles specifically, since those were the two screens found not to be
+    scaling at all before this session's fix.
+
+### Ideas not built, worth mentioning to the user
+
+The user said "anything else useful, add it but tell me after" — these weren't built (scope was
+already very large for one session), just flagged as candidates for later: read receipts / unread
+badges on group tabs (announcements/FAQ currently don't indicate "new since you last opened"),
+@mentions in group chat, pinning a message or announcement, a real image-moderation API integration
+(would need a paid third-party service — Sightengine, AWS Rekognition, etc. — to make photo
+flagging actually real instead of report-only), group invite links, and photo compression/thumbnails
+before upload (currently uploads at `quality: 0.8` full-size, same as profile photos — fine for a
+handful of images but could add up in Storage usage at scale).
+
+## Session notes — where we left off (2026-08-20)
+
+**⚠️ NEXT STEP WHEN THIS PICKS BACK UP
 to go back and finish that later — see the Groups entry below for exactly what's still mock there).
 
 **Groups — core made real, decorative parts still mock (this session):** `GroupsContext` was
