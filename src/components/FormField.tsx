@@ -15,7 +15,6 @@ export function FormField({
   inputRef?: React.Ref<TextInput>;
 } & TextInputProps) {
   const palette = useRolePalette();
-  // Hold-to-reveal, not toggle-to-reveal — the field goes back to masked the moment you let go.
   const [revealed, setRevealed] = useState(false);
 
   return (
@@ -32,8 +31,7 @@ export function FormField({
         />
         {secureTextEntry ? (
           <Pressable
-            onPressIn={() => setRevealed(true)}
-            onPressOut={() => setRevealed(false)}
+            onPress={() => setRevealed((v) => !v)}
             hitSlop={8}
             style={{ position: "absolute", right: 12, height: 24, width: 24 }}
             className="items-center justify-center"
