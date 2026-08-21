@@ -80,7 +80,7 @@ function TwoFactorCodeModal({
           <TextInput
             value={code}
             onChangeText={(t) => { setCode(t.replace(/[^0-9]/g, "").slice(0, 10)); setError(null); }}
-            placeholder="Code from your email"
+            placeholder="8 digit code from your email"
             placeholderTextColor={palette.muted}
             keyboardType="number-pad"
             style={{ color: palette.text, borderColor: error ? palette.danger : palette.border }}
