@@ -53,11 +53,16 @@ export default function ResetPassword() {
     }
     setSaving(true);
     const { error: updateError } = await supabase.auth.updateUser({ password });
-    setSaving(false);
     if (updateError) {
+      setSaving(false);
       setError(updateError.message);
       return;
     }
+    // setSession above (to apply the password change) leaves a real signed-in session behind —
+    // sign it out so finishing a password reset doesn't silently log the user straight into the
+    // app; they should land back on the login screen instead.
+    await supabase.auth.signOut();
+    setSaving(false);
     setStatus("done");
   };
 
@@ -84,9 +89,9 @@ export default function ResetPassword() {
   if (status === "done") {
     return (
       <View className="flex-1 items-center justify-center gap-4 bg-bg px-8">
-        <Ionicons name="checkmark-circle-outline" size={32} color={palette.primary} />
-        <Text className="text-center text-base text-text">Your password has been updated.</Text>
-        <PrimaryButton label="Continue" onPress={() => router.replace("/")} />
+        <Ionicons name="checkmark-circle" size={40} color={palette.primary} />
+        <Text className="text-center text-lg font-bold text-text">Password successfully changed</Text>
+        <PrimaryButton label="Go back to log in" onPress={() => router.replace("/")} />
       </View>
     );
   }
