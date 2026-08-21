@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -79,8 +79,8 @@ function TwoFactorCodeModal({
           </Text>
           <TextInput
             value={code}
-            onChangeText={(t) => { setCode(t.replace(/[^0-9]/g, "").slice(0, 6)); setError(null); }}
-            placeholder="123456"
+            onChangeText={(t) => { setCode(t.replace(/[^0-9]/g, "").slice(0, 10)); setError(null); }}
+            placeholder="Code from your email"
             placeholderTextColor={palette.muted}
             keyboardType="number-pad"
             style={{ color: palette.text, borderColor: error ? palette.danger : palette.border }}
@@ -93,7 +93,7 @@ function TwoFactorCodeModal({
             </View>
           ) : null}
           <View className="mt-6">
-            <PrimaryButton label="Verify" onPress={verify} loading={verifying} disabled={code.length < 6} />
+            <PrimaryButton label="Verify" onPress={verify} loading={verifying} disabled={code.length === 0} />
           </View>
           <Pressable onPress={resend} className="mt-4 items-center py-1 active:opacity-60">
             <Text className="text-sm font-semibold" style={{ color: palette.primary }}>
@@ -206,6 +206,7 @@ export default function Login() {
   const [showForgot, setShowForgot] = useState(false);
   const [showTwoFactor, setShowTwoFactor] = useState(false);
   const [pendingTwoFactorAccount, setPendingTwoFactorAccount] = useState<StoredAccount | null>(null);
+  const passwordInputRef = useRef<TextInput>(null);
 
   const homeRoute = isWorker ? "/worker/home" : "/client/home";
 
@@ -222,8 +223,11 @@ export default function Login() {
     setSubmitting(false);
     if (!result.ok) {
       if (result.error === "Username incorrect.") setUsernameError(result.error);
-      else if (result.error === "Password incorrect.") setPasswordError(result.error);
-      else setError(result.error);
+      else if (result.error === "Password incorrect.") {
+        setPasswordError(result.error);
+        setPassword("");
+        passwordInputRef.current?.focus();
+      } else setError(result.error);
       return;
     }
     const account = result.account;
@@ -269,6 +273,7 @@ export default function Login() {
           error={usernameError}
         />
         <FormField
+          inputRef={passwordInputRef}
           label="Password"
           value={password}
           onChangeText={(t) => { setPassword(t); setPasswordError(undefined); }}
