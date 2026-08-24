@@ -1,5 +1,67 @@
 @AGENTS.md
 
+## Session notes — where we left off (2026-08-24, even later same day)
+
+**No new migration in this entry.** Purely a UI follow-up to the role-permissions batch above —
+no SQL to run, just pull the latest code (already pushed).
+
+Three fixes from user feedback after testing the last two batches:
+
+1. **Tab bar was overcorrected.** It went from "half the screen" (original complaint) to
+   "hard to see" (this session's complaint) — 9.5px text, minimal padding. Bumped to `text-xs`
+   (12px) bold, taller touch targets (`py-3` vs `py-1.5`), thicker inactive border, bigger pending
+   badge dot. Still one compact row, just legible now.
+
+2. **FAQ delete was real but undiscoverable.** `deleteFaq` and its RLS policy already existed and
+   worked — the only way to reach it was a long-press with no visual hint it was there. Added an
+   explicit trash icon in the top-right of each FAQ card (pending and answered), visible to the
+   asker (their own pending question, as a retraction), the owner, and `can_answer_faq`-role
+   members — same permission check as before, just now visibly reachable.
+
+3. **Merged "Real permissions" and "Custom roles" into one Roles screen.** The previous round built
+   real per-role DB permissions (`group_roles`) as a separate section from the pre-existing local
+   custom-roles editor (`GroupRole`/`Powers`, rank-based) — the user explicitly didn't want that
+   split: one role, one edit card, every power (real + mock) as a switch underneath it.
+   - `createUnifiedRole(groupId, name, powers, realPatch)` (`GroupsContext.tsx`) now creates both
+     halves together under a **shared client-generated UUID** (`generateId()`, already used
+     elsewhere for optimistic real ids) — one insert into `group_roles`, one local `GroupRole` with
+     the same id. `deleteUnifiedRole` and `setMemberRoleUnified` mirror this (the latter sets the
+     mock `roleId` for display/rank and, only if that role actually has a real `group_roles` row,
+     also writes `custom_role_id`).
+   - `buildGroup()` now **backfills** a matching local `GroupRole` (NO_POWERS) for any
+     `group_roles` row that doesn't already have one — this makes every real permission role
+     created in the *previous* session immediately show up in the unified editor with its mock
+     toggles too, no data migration needed.
+   - `roles.tsx` is now one flat list: President/Member (locked, unchanged) at top, then every
+     other role in one card showing the 3 real toggles (Mute/Kick/Ban, Answer FAQs, View & Act on
+     Flagged) followed directly by the remaining mock toggles — no section header between them, no
+     separate "Create a permission role" button anymore, just one "Create a role" form with every
+     switch on it.
+   - The member action-sheet's "Change role" and "Set permission role" are now one "Set role"
+     entry, calling `setMemberRoleUnified`.
+   - **Assumption/known limitation:** the built-in "Vice President" starter role (and, in theory,
+     any legacy custom role created before this session whose id isn't a valid UUID) can't get a
+     real `group_roles` counterpart — Postgres would reject a non-UUID primary key. VP's card
+     therefore only shows its mock toggles, same as it always has; every role created via the new
+     unified "Create a role" flow gets both. Not raised to the user proactively unless it comes up.
+   - **Assumption:** dropped the dead mock "Kick members" / "Ban members" toggles from display
+     entirely (not from the type, just hidden in this screen) — they were never wired to any real
+     gating check anywhere in the app (grepped to confirm), and showing them next to the real "Mute,
+     kick & ban" toggle in the same card would've been actively misleading.
+
+### Testing checklist for next session
+
+1. Tab bar: confirm it reads clearly now, still one row, not tall.
+2. FAQ: confirm the trash icon shows on your own pending question, and on any question once you're
+   the owner or have "Answer FAQs" — tap it, confirm the same retract/delete confirmation as before.
+3. Roles: open Roles & Permissions — confirm President/Member look as before, and every other role
+   (including Vice President) is now a single card. Create a new role, toggle a mix of real and
+   mock switches, confirm it saves. Assign a member to it from the Members tab (now just "Set
+   role") and confirm both the display role AND real power actually took effect (e.g. they can now
+   answer FAQs if you toggled that on). Delete a role and confirm members on it fall back to Member.
+   Open a role created in the *previous* session (before this fix) and confirm it now also shows
+   its 3 real toggles (backfill working).
+
 ## Session notes — where we left off (2026-08-24, later same day)
 
 **⚠️ NEXT STEP — NOTHING BELOW HAS BEEN TESTED. Run the new migration first, exactly like the

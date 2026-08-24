@@ -116,7 +116,6 @@ export default function GroupDetail() {
   const [msgMenu, setMsgMenu] = useState<GroupMessage | null>(null);
   const [memberMenu, setMemberMenu] = useState<GroupMember | null>(null);
   const [roleMenu, setRoleMenu] = useState<GroupMember | null>(null);
-  const [permissionRoleMenu, setPermissionRoleMenu] = useState<GroupMember | null>(null);
   const [muteTarget, setMuteTarget] = useState<ModerationTarget | null>(null);
   const [kickTarget, setKickTarget] = useState<ModerationTarget | null>(null);
   const [kickReason, setKickReason] = useState("");
@@ -163,9 +162,7 @@ export default function GroupDetail() {
     const isOwner = group.ownerId === g.me.userId;
     const canModerateGeneral = isOwner || g.hasRealPower(group, "canKick");
     if (actionable && g.can(group, "assignRoles") && g.assignableRoles(group).length > 0)
-      opts.push({ label: "Change role", icon: "swap-vertical-outline", onPress: () => setRoleMenu(memberMenu) });
-    if (actionable && isOwner)
-      opts.push({ label: "Set permission role", icon: "shield-checkmark-outline", onPress: () => setPermissionRoleMenu(memberMenu) });
+      opts.push({ label: "Set role", icon: "shield-checkmark-outline", onPress: () => setRoleMenu(memberMenu) });
     if (actionable && canModerateGeneral)
       opts.push({ label: "Mute member", icon: "volume-mute-outline", onPress: () => setMuteTarget({ userId: memberMenu.userId, name: memberMenu.name, realName: memberMenu.realName }) });
     if (actionable && canModerateGeneral)
@@ -184,20 +181,9 @@ export default function GroupDetail() {
     if (!roleMenu || !group) return [];
     return g.assignableRoles(group).map((r) => ({
       label: r.name + (roleMenu.roleId === r.id ? " ✓" : ""),
-      onPress: () => g.setMemberRole(group.id, roleMenu.userId, r.id),
+      onPress: () => g.setMemberRoleUnified(group.id, roleMenu.userId, r.id),
     }));
   }, [roleMenu, group]);
-
-  const permissionRoleMenuOptions = useMemo((): ActionSheetOption[] => {
-    if (!permissionRoleMenu || !group) return [];
-    const current = permissionRoleMenu.customRoleId;
-    const opts: ActionSheetOption[] = group.permissionRoles.map((r) => ({
-      label: r.name + (current === r.id ? " ✓" : ""),
-      onPress: () => g.assignPermissionRole(group.id, permissionRoleMenu.userId, r.id),
-    }));
-    opts.push({ label: "No permission role" + (!current ? " ✓" : ""), onPress: () => g.assignPermissionRole(group.id, permissionRoleMenu.userId, null) });
-    return opts;
-  }, [permissionRoleMenu, group]);
 
   const muteMenuOptions = useMemo((): ActionSheetOption[] => {
     if (!muteTarget || !group) return [];
@@ -325,28 +311,28 @@ export default function GroupDetail() {
         ) : null}
       </View>
 
-      {/* Tabs — a compact row of boxes spanning the full width, not a tall scroll strip. */}
-      <View className="flex-row gap-1 border-b border-border bg-bg px-2 py-1.5">
+      {/* Tabs — a compact row of boxes spanning the full width, sized to actually be readable. */}
+      <View className="flex-row gap-1.5 border-b border-border bg-bg px-2.5 py-2">
         {TABS.map((t) => {
           const active = tab === t.key;
           return (
             <Pressable
               key={t.key}
               onPress={() => setTab(t.key)}
-              className="flex-1 items-center justify-center rounded-xl px-0.5 py-1.5"
-              style={{ backgroundColor: active ? palette.primary : palette.surface, borderWidth: active ? 0 : 1, borderColor: palette.border }}
+              className="flex-1 items-center justify-center rounded-xl px-1 py-3"
+              style={{ backgroundColor: active ? palette.primary : palette.surface, borderWidth: active ? 0 : 1.5, borderColor: palette.border }}
             >
               <Text
                 numberOfLines={1}
                 adjustsFontSizeToFit
-                minimumFontScale={0.7}
-                className="text-[9.5px] font-semibold"
-                style={{ color: active ? palette.primaryFg : palette.muted }}
+                minimumFontScale={0.8}
+                className="text-xs font-bold"
+                style={{ color: active ? palette.primaryFg : palette.text }}
               >
                 {t.label}
               </Text>
               {t.key === "faq" && faqPendingCount > 0 ? (
-                <View className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full" style={{ backgroundColor: palette.danger }} />
+                <View className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2" style={{ backgroundColor: palette.danger, borderColor: palette.bg }} />
               ) : null}
             </Pressable>
           );
@@ -463,16 +449,17 @@ export default function GroupDetail() {
               const canDelete = isOwner || f.authorId === g.me.userId || canAnswerFaqs;
               if (pending) {
                 return (
-                  <Pressable
-                    key={f.id}
-                    disabled={!canDelete}
-                    onLongPress={() => canDelete && setFaqMenu(f)}
-                    className="rounded-2xl border border-dashed border-border bg-surface p-4"
-                    style={{ opacity: 0.65 }}
-                  >
-                    <View className="mb-1 flex-row items-center gap-1.5">
-                      {f.flagged ? <Ionicons name="flag" size={11} color={palette.danger} /> : null}
-                      <Text className="text-[10px] font-bold uppercase tracking-wider" style={{ color: palette.muted }}>Awaiting response</Text>
+                  <View key={f.id} className="rounded-2xl border border-dashed border-border bg-surface p-4" style={{ opacity: 0.65 }}>
+                    <View className="mb-1 flex-row items-center justify-between">
+                      <View className="flex-1 flex-row items-center gap-1.5">
+                        {f.flagged ? <Ionicons name="flag" size={11} color={palette.danger} /> : null}
+                        <Text className="text-[10px] font-bold uppercase tracking-wider" style={{ color: palette.muted }}>Awaiting response</Text>
+                      </View>
+                      {canDelete ? (
+                        <Pressable onPress={() => setFaqMenu(f)} hitSlop={8}>
+                          <Ionicons name="trash-outline" size={16} color={palette.danger} />
+                        </Pressable>
+                      ) : null}
                     </View>
                     <Text className="text-sm font-bold text-text">{f.question}</Text>
                     <Text className="mt-2 text-[11px] text-muted">{f.authorName} · {f.createdAt}</Text>
@@ -485,20 +472,22 @@ export default function GroupDetail() {
                         <Text className="text-xs font-semibold" style={{ color: palette.primary }}>Answer</Text>
                       </Pressable>
                     ) : null}
-                  </Pressable>
+                  </View>
                 );
               }
               return (
-                <Pressable
-                  key={f.id}
-                  disabled={!canDelete}
-                  onLongPress={() => canDelete && setFaqMenu(f)}
-                  className="rounded-2xl border border-border bg-surface p-4"
-                >
-                  <Text className="text-sm font-bold text-text">{f.question}</Text>
-                  <Text className="mt-1 text-sm leading-6 text-muted">{f.answer}</Text>
+                <View key={f.id} className="rounded-2xl border border-border bg-surface p-4">
+                  <View className="mb-1 flex-row items-start justify-between gap-2">
+                    <Text className="flex-1 text-sm font-bold text-text">{f.question}</Text>
+                    {canDelete ? (
+                      <Pressable onPress={() => setFaqMenu(f)} hitSlop={8}>
+                        <Ionicons name="trash-outline" size={16} color={palette.danger} />
+                      </Pressable>
+                    ) : null}
+                  </View>
+                  <Text className="text-sm leading-6 text-muted">{f.answer}</Text>
                   <Text className="mt-2 text-[11px] text-muted">Answered by {f.answeredByName ?? "a member"} · {f.answeredAt}</Text>
-                </Pressable>
+                </View>
               );
             })}
             {group.faqs.length === 0 ? <Text className="mt-6 text-center text-sm text-muted">No common questions yet — ask the first one.</Text> : null}
@@ -652,7 +641,6 @@ export default function GroupDetail() {
       <ActionSheet visible={msgMenu != null} options={msgMenuOptions} onClose={() => setMsgMenu(null)} />
       <ActionSheet visible={memberMenu != null} title={memberMenu?.name} options={memberMenuOptions} onClose={() => setMemberMenu(null)} />
       <ActionSheet visible={roleMenu != null} title={`Set ${roleMenu?.name}'s role`} options={roleMenuOptions} onClose={() => setRoleMenu(null)} />
-      <ActionSheet visible={permissionRoleMenu != null} title={permissionRoleMenu ? `${permissionRoleMenu.name}'s permission role` : ""} options={permissionRoleMenuOptions} onClose={() => setPermissionRoleMenu(null)} />
       <ActionSheet visible={muteTarget != null} title={muteTarget ? `Mute ${muteTarget.name} for…` : ""} options={muteMenuOptions} onClose={() => setMuteTarget(null)} />
       <ActionSheet visible={reportFor != null} title={`Report ${reportFor?.name} for…`} options={reportOptions} onClose={() => setReportFor(null)} />
       <ActionSheet visible={announceMenu != null} options={announceMenuOptions} onClose={() => setAnnounceMenu(null)} />

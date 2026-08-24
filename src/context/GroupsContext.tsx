@@ -7,7 +7,7 @@ import { containsProfanity } from "../lib/moderateText";
 import { pickAndUploadPhoto } from "../lib/uploadPhoto";
 import { planById } from "../data/plans";
 import {
-  defaultRoles, displayName, getRole, memberRank, seedGroups,
+  defaultRoles, displayName, getRole, memberRank, seedGroups, NO_POWERS,
   type Group, type GroupAnnouncement, type GroupFaq, type GroupKickRecord, type GroupMessage,
   type GroupRole, type ModerationLogEntry, type PermissionRole, type PowerKey, type Powers,
 } from "../data/groupsMock";
@@ -42,10 +42,12 @@ type GroupsState = {
   // real per-role permissions (group_roles + group_members.custom_role_id)
   hasRealPower: (g: Group, key: PermissionKey, userId?: string) => boolean;
   myPermissionRole: (g: Group) => PermissionRole | null;
-  createPermissionRole: (id: string, name: string) => Promise<void>;
   updatePermissionRole: (id: string, roleId: string, patch: Partial<Pick<PermissionRole, "name" | "canKick" | "canAnswerFaq" | "canViewFlagged">>) => Promise<void>;
-  deletePermissionRole: (id: string, roleId: string) => Promise<void>;
-  assignPermissionRole: (id: string, userId: string, roleId: string | null) => Promise<void>;
+  // One role, one edit screen: creating/deleting/assigning a role touches both the real
+  // group_roles row and the local mock powers together, keyed by the same id.
+  createUnifiedRole: (id: string, name: string, powers: Powers, permissionPatch: Pick<PermissionRole, "canKick" | "canAnswerFaq" | "canViewFlagged">) => Promise<void>;
+  deleteUnifiedRole: (id: string, roleId: string) => Promise<void>;
+  setMemberRoleUnified: (id: string, userId: string, roleId: string) => Promise<void>;
   // membership
   createGroup: (input: NewGroup) => Promise<string>;
   joinGroup: (id: string) => Promise<void>;
@@ -269,7 +271,15 @@ function buildGroup(
         answeredAt: f.answered_at ? formatShortDate(f.answered_at) : undefined,
         createdAt: formatShortDate(f.created_at),
       })),
-    roles: existing?.roles ?? defaultRoles(),
+    // Every real group_roles row gets a matching local mock role too (NO_POWERS if it doesn't
+    // already have one) so the unified role editor always has both facets to show together.
+    roles: (() => {
+      const base = existing?.roles ?? defaultRoles();
+      const missing = roles
+        .filter((r) => !base.some((br) => br.id === r.id))
+        .map((r) => ({ id: r.id, name: r.name, rank: 50, powers: { ...NO_POWERS } }));
+      return [...base, ...missing];
+    })(),
     permissionRoles: roles.map((r) => ({ id: r.id, name: r.name, canKick: r.can_kick, canAnswerFaq: r.can_answer_faq, canViewFlagged: r.can_view_flagged })),
     bans: bans.map((b) => ({ userId: b.user_id, name: b.name, bannedAt: formatShortDate(b.banned_at) })),
     kickRecords: kicked.map((k) => ({
@@ -423,10 +433,11 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
   };
   const myPermissionRole = (g: Group) => permissionRoleFor(g, me.userId);
 
-  const createPermissionRole = async (id: string, name: string) => {
-    const { error } = await supabase.from("group_roles").insert({ group_id: id, name });
-    if (error) { console.error("[group_roles] create failed:", error.message); return; }
-    await loadGroups();
+  // Internal — not exposed on the context. The public creation path is createUnifiedRole below,
+  // which inserts this with an explicit shared id so the same role has both real and mock facets.
+  const createPermissionRoleWithId = async (roleId: string, groupId: string, name: string, p: Pick<PermissionRole, "canKick" | "canAnswerFaq" | "canViewFlagged">) => {
+    const { error } = await supabase.from("group_roles").insert({ id: roleId, group_id: groupId, name, can_kick: p.canKick, can_answer_faq: p.canAnswerFaq, can_view_flagged: p.canViewFlagged });
+    if (error) console.error("[group_roles] create failed:", error.message);
   };
   const updatePermissionRole = async (id: string, roleId: string, patch: Partial<Pick<PermissionRole, "name" | "canKick" | "canAnswerFaq" | "canViewFlagged">>) => {
     const dbPatch: Record<string, unknown> = {};
@@ -438,15 +449,14 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
     if (error) { console.error("[group_roles] update failed:", error.message); return; }
     await loadGroups();
   };
-  const deletePermissionRole = async (id: string, roleId: string) => {
+  // Internal — not exposed on the context. Used by deleteUnifiedRole/setMemberRoleUnified below.
+  const deletePermissionRoleById = async (roleId: string) => {
     const { error } = await supabase.from("group_roles").delete().eq("id", roleId);
-    if (error) { console.error("[group_roles] delete failed:", error.message); return; }
-    await loadGroups();
+    if (error) console.error("[group_roles] delete failed:", error.message);
   };
-  const assignPermissionRole = async (id: string, userId: string, roleId: string | null) => {
-    const { error } = await supabase.from("group_members").update({ custom_role_id: roleId }).eq("group_id", id).eq("user_id", userId);
-    if (error) { console.error("[group_members] assign permission role failed:", error.message); return; }
-    await loadGroups();
+  const assignPermissionRoleById = async (groupId: string, userId: string, roleId: string | null) => {
+    const { error } = await supabase.from("group_members").update({ custom_role_id: roleId }).eq("group_id", groupId).eq("user_id", userId);
+    if (error) console.error("[group_members] assign permission role failed:", error.message);
   };
 
   const patch = (id: string, fn: (g: Group) => Group) =>
@@ -813,9 +823,10 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
     await loadGroups();
   };
 
-  // Local/mock only — no backing table for the rank/powers role system itself.
-  const createRole = (id: string, name: string, powers: Powers) =>
-    patch(id, (g) => withLog({ ...g, roles: [...g.roles, { id: nextId("role"), name, rank: 50, powers }] }, `${displayName(me.name, me.realName)} created the ${name} role`));
+  // Local/mock only — no backing table for the rank/powers role system itself. `roleId` lets
+  // createUnifiedRole below reuse the same id as the matching real group_roles row.
+  const createRole = (id: string, name: string, powers: Powers, roleId: string = nextId("role")) =>
+    patch(id, (g) => withLog({ ...g, roles: [...g.roles, { id: roleId, name, rank: 50, powers }] }, `${displayName(me.name, me.realName)} created the ${name} role`));
 
   const updateRole = (id: string, roleId: string, p: Partial<Pick<GroupRole, "name" | "powers">>) =>
     patch(id, (g) => withLog({ ...g, roles: g.roles.map((r) => (r.id === roleId ? { ...r, ...p } : r)) }, `${displayName(me.name, me.realName)} updated the ${getRole(g, roleId)?.name ?? "a"} role`));
@@ -832,6 +843,33 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
       )
     );
 
+  // One role, one edit screen: create both facets together under a shared id so the owner never
+  // sees "custom roles" and "real permissions" as separate things.
+  const createUnifiedRole = async (id: string, name: string, powers: Powers, permissionPatch: Pick<PermissionRole, "canKick" | "canAnswerFaq" | "canViewFlagged">) => {
+    const roleId = generateId();
+    createRole(id, name, powers, roleId);
+    await createPermissionRoleWithId(roleId, id, name, permissionPatch);
+    await loadGroups();
+  };
+
+  const deleteUnifiedRole = async (id: string, roleId: string) => {
+    const group = getGroup(id);
+    deleteRole(id, roleId);
+    if (group?.permissionRoles.some((r) => r.id === roleId)) await deletePermissionRoleById(roleId);
+    await loadGroups();
+  };
+
+  // Sets both the mock rank/display role and (when this role actually has a real group_roles
+  // counterpart — true for every role created via createUnifiedRole, false for a legacy
+  // mock-only role like the built-in Vice President) the real permission assignment too.
+  const setMemberRoleUnified = async (id: string, userId: string, roleId: string) => {
+    const group = getGroup(id);
+    setMemberRole(id, userId, roleId);
+    const hasReal = group?.permissionRoles.some((r) => r.id === roleId) ?? false;
+    await assignPermissionRoleById(id, userId, hasReal ? roleId : null);
+    await loadGroups();
+  };
+
   const myGroups = groups.filter((g) => g.members.some((m) => m.userId === me.userId));
   const discoverGroups = groups.filter((g) => !g.members.some((m) => m.userId === me.userId));
 
@@ -841,7 +879,7 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
         me, groups, myGroups, discoverGroups, getGroup, isMember, hasRequested, isBanned,
         joinLimit, joinedCount, atJoinLimit,
         myRole, myRank, can, isStaff, canActOn, assignableRoles, sortedMembers,
-        hasRealPower, myPermissionRole, createPermissionRole, updatePermissionRole, deletePermissionRole, assignPermissionRole,
+        hasRealPower, myPermissionRole, updatePermissionRole, createUnifiedRole, deleteUnifiedRole, setMemberRoleUnified,
         createGroup, joinGroup, requestJoin, cancelRequest, leaveGroup,
         acceptRequest, declineRequest, kickRecordFor, kickMember, banMember, unbanMember, muteMember, unmuteMember, setMemberRole,
         myKickNotices, acknowledgeKickNotice,
