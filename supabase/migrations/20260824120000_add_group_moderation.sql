@@ -16,49 +16,6 @@ alter table group_requests add column real_name text not null default '';
 update group_requests gr set real_name = coalesce(nullif(trim(coalesce(u.first_name, '') || ' ' || coalesce(u.last_name, '')), ''), u.first_name, '')
   from users u where u.id = gr.user_id and gr.real_name = '';
 
--- Owner needs write access to a member's row for mute/can_answer_faq. role_id/name stay
--- client-enforced-only (same trust boundary the rest of this table already relies on).
-create policy "owner can update a member's row" on group_members
-  for update using (
-    exists (select 1 from groups g where g.id = group_members.group_id and g.owner_id = auth.uid())
-  );
-
-drop policy "you can join a public group yourself" on group_members;
-create policy "you can join a public group yourself" on group_members
-  for insert with check (
-    auth.uid() = user_id
-    and exists (select 1 from groups g where g.id = group_members.group_id and g.is_private = false)
-    and not exists (select 1 from group_bans b where b.group_id = group_members.group_id and b.user_id = auth.uid())
-    and not exists (select 1 from group_kicked_users k where k.group_id = group_members.group_id and k.user_id = auth.uid())
-  );
-
-drop policy "you can request to join a group" on group_requests;
-create policy "you can request to join a group" on group_requests
-  for insert with check (
-    auth.uid() = user_id
-    and not exists (select 1 from group_bans b where b.group_id = group_requests.group_id and b.user_id = auth.uid())
-  );
-
--- Muted members can't send. Flagged messages become permanent (no delete, only dismiss-flag).
-drop policy "members can send messages in their groups" on group_messages;
-create policy "members can send messages in their groups" on group_messages
-  for insert with check (
-    auth.uid() = sender_id
-    and exists (
-      select 1 from group_members gm
-      where gm.group_id = group_messages.group_id and gm.user_id = auth.uid()
-        and (gm.muted_until is null or gm.muted_until < now())
-    )
-  );
-
-drop policy "sender or group owner can edit/delete a message" on group_messages;
-create policy "sender or group owner can edit/delete a message" on group_messages
-  for update using (
-    auth.uid() = sender_id
-    or exists (select 1 from groups g where g.id = group_messages.group_id and g.owner_id = auth.uid())
-  )
-  with check (not (flagged and deleted));
-
 create table group_bans (
   group_id uuid not null references groups (id) on delete cascade,
   user_id uuid not null references users (id) on delete cascade,
@@ -105,6 +62,49 @@ create policy "owner can record a kick" on group_kicked_users
   for insert with check (
     exists (select 1 from groups g where g.id = group_kicked_users.group_id and g.owner_id = auth.uid())
   );
+
+-- Owner needs write access to a member's row for mute/can_answer_faq. role_id/name stay
+-- client-enforced-only (same trust boundary the rest of this table already relies on).
+create policy "owner can update a member's row" on group_members
+  for update using (
+    exists (select 1 from groups g where g.id = group_members.group_id and g.owner_id = auth.uid())
+  );
+
+drop policy "you can join a public group yourself" on group_members;
+create policy "you can join a public group yourself" on group_members
+  for insert with check (
+    auth.uid() = user_id
+    and exists (select 1 from groups g where g.id = group_members.group_id and g.is_private = false)
+    and not exists (select 1 from group_bans b where b.group_id = group_members.group_id and b.user_id = auth.uid())
+    and not exists (select 1 from group_kicked_users k where k.group_id = group_members.group_id and k.user_id = auth.uid())
+  );
+
+drop policy "you can request to join a group" on group_requests;
+create policy "you can request to join a group" on group_requests
+  for insert with check (
+    auth.uid() = user_id
+    and not exists (select 1 from group_bans b where b.group_id = group_requests.group_id and b.user_id = auth.uid())
+  );
+
+-- Muted members can't send. Flagged messages become permanent (no delete, only dismiss-flag).
+drop policy "members can send messages in their groups" on group_messages;
+create policy "members can send messages in their groups" on group_messages
+  for insert with check (
+    auth.uid() = sender_id
+    and exists (
+      select 1 from group_members gm
+      where gm.group_id = group_messages.group_id and gm.user_id = auth.uid()
+        and (gm.muted_until is null or gm.muted_until < now())
+    )
+  );
+
+drop policy "sender or group owner can edit/delete a message" on group_messages;
+create policy "sender or group owner can edit/delete a message" on group_messages
+  for update using (
+    auth.uid() = sender_id
+    or exists (select 1 from groups g where g.id = group_messages.group_id and g.owner_id = auth.uid())
+  )
+  with check (not (flagged and deleted));
 
 -- Instant-join for public groups moves server-side so a previously-kicked user gets routed into
 -- group_requests instead, even though the group itself is still public.
