@@ -1,5 +1,39 @@
 @AGENTS.md
 
+## Session notes — where we left off (2026-08-24, end of session)
+
+**⚠️ NEXT STEP — nothing in today's last batch (tab bar sizing / FAQ delete button / merged Roles
+screen, commit `00d4ceb`) has been tested by the user yet.** No migration needed for it — just pull
+latest and test. The testing checklist for it is right below, in the "even later same day" entry
+(section "Testing checklist for next session"). Do that first before building anything new.
+
+**Two things raised at the very end of this session, not yet acted on in code:**
+
+1. **User can't have two accounts logged in on two tabs at once (one as owner, one as member) for
+   testing** — root cause is normal browser behavior, not a bug: the Supabase session lives in
+   `localStorage`, which is shared across every tab of the same origin, so logging into account #2
+   in one tab silently signs out account #1 in the other. I explained this and told the user to use
+   an incognito/private window for the second account instead of a second normal tab — that's a
+   real fix for their testing workflow with zero code change. **Did not** switch the app to
+   per-tab session storage (e.g. `sessionStorage`) — that would fix the two-tab testing annoyance
+   but would make every real user get logged out whenever they close a browser tab, which is a much
+   worse trade for the actual product. Don't make that change unless the user explicitly asks for
+   it after understanding that trade-off.
+2. **"Does joining a public group you were never kicked from still work instantly, no approval
+   needed?"** — the user asked me to verify this but ran out of time to test it themselves, and I
+   only verified it by reading `join_public_group()` in
+   `supabase/migrations/20260824130000_add_group_role_permissions.sql`, not by actually driving the
+   app. Logic read: a user with no `group_bans` row and no `group_kicked_users` row for that group
+   hits the direct-insert-into-`group_members` branch, not the `group_requests` branch — should be
+   correct, but flag to the user that this is code-read confidence, not click-tested confidence, if
+   it comes up again. Offered to actually browser-test it (via the `claude-in-chrome` skill) if they
+   want stronger assurance — they didn't take that up this session.
+
+**No feature was chosen for "what's next."** Candidates already offered to the user and not yet
+picked: read receipts / unread badges / @mentions / pinning / invite links in Groups, real
+notification/alarm preferences (still 100% local/mock), or checkout/billing (still demo
+Stripe-less). Ask before starting any of these — don't assume which one.
+
 ## Session notes — where we left off (2026-08-24, even later same day)
 
 **No new migration in this entry.** Purely a UI follow-up to the role-permissions batch above —
