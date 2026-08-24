@@ -27,7 +27,6 @@ create policy "owner can manage permission roles" on group_roles
   );
 
 alter table group_members add column custom_role_id uuid references group_roles (id) on delete set null;
-alter table group_members drop column can_answer_faq;
 
 -- create_group() referenced the now-dropped column — redefine without it. The owner never needs a
 -- custom_role_id: group_can_moderate() and the client's hasRealPower() both special-case owner_id.
@@ -154,6 +153,9 @@ create policy "author, owner, or qualified member can delete a faq entry" on gro
       where gm.group_id = group_faqs.group_id and gm.user_id = auth.uid() and gr.can_answer_faq = true
     )
   );
+
+-- Old FAQ policies referencing this column are gone now, so it's safe to drop.
+alter table group_members drop column can_answer_faq;
 
 -- Shared authorization check for kick/mute/ban: owner or can_kick role can act on anyone; a
 -- can_view_flagged-only role can act only on the sender of a specific flagged message they're
