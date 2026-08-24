@@ -7,12 +7,16 @@ import { containsProfanity } from "../lib/moderateText";
 import { pickAndUploadPhoto } from "../lib/uploadPhoto";
 import { planById } from "../data/plans";
 import {
-  defaultRoles, getRole, memberRank, seedGroups,
-  type Group, type GroupAnnouncement, type GroupFaq, type GroupMessage, type GroupRole, type PowerKey, type Powers,
+  defaultRoles, displayName, getRole, memberRank, seedGroups,
+  type Group, type GroupAnnouncement, type GroupFaq, type GroupKickRecord, type GroupMessage,
+  type GroupRole, type ModerationLogEntry, type PermissionRole, type PowerKey, type Powers,
 } from "../data/groupsMock";
 
 export type CurrentGroupUser = { userId: string; name: string; realName: string; avatarUri: string };
 type NewGroup = { name: string; description: string; isPrivate: boolean; avatarUri: string };
+export type PermissionKey = "canKick" | "canAnswerFaq" | "canViewFlagged";
+// Notice shown to someone who's been removed from a group, until they acknowledge it.
+export type KickNotice = { groupId: string; groupName: string; reason: string | null; kickedAt: string; acknowledgedAt: string | null };
 
 type GroupsState = {
   me: CurrentGroupUser;
@@ -27,7 +31,7 @@ type GroupsState = {
   joinLimit: number | "unlimited";
   joinedCount: number;
   atJoinLimit: boolean;
-  // permissions
+  // mock rank/powers (unchanged — local-only, see groupsMock.ts)
   myRole: (g: Group) => GroupRole | null;
   myRank: (g: Group) => number;
   can: (g: Group, power: PowerKey) => boolean;
@@ -35,6 +39,13 @@ type GroupsState = {
   canActOn: (g: Group, member: Group["members"][number]) => boolean;
   assignableRoles: (g: Group) => GroupRole[];
   sortedMembers: (g: Group) => Group["members"];
+  // real per-role permissions (group_roles + group_members.custom_role_id)
+  hasRealPower: (g: Group, key: PermissionKey, userId?: string) => boolean;
+  myPermissionRole: (g: Group) => PermissionRole | null;
+  createPermissionRole: (id: string, name: string) => Promise<void>;
+  updatePermissionRole: (id: string, roleId: string, patch: Partial<Pick<PermissionRole, "name" | "canKick" | "canAnswerFaq" | "canViewFlagged">>) => Promise<void>;
+  deletePermissionRole: (id: string, roleId: string) => Promise<void>;
+  assignPermissionRole: (id: string, userId: string, roleId: string | null) => Promise<void>;
   // membership
   createGroup: (input: NewGroup) => Promise<string>;
   joinGroup: (id: string) => Promise<void>;
@@ -43,22 +54,26 @@ type GroupsState = {
   leaveGroup: (id: string) => void;
   acceptRequest: (id: string, userId: string) => void;
   declineRequest: (id: string, userId: string) => void;
-  kickMember: (id: string, userId: string) => void;
-  banMember: (id: string, userId: string) => void;
-  unbanMember: (id: string, userId: string) => void;
-  muteMember: (id: string, userId: string, hours: number) => void;
-  toggleCanAnswerFaq: (id: string, userId: string, value: boolean) => void;
+  kickRecordFor: (g: Group, userId: string) => GroupKickRecord | undefined;
+  kickMember: (id: string, userId: string, reason?: string, viaMessageId?: string) => Promise<void>;
+  banMember: (id: string, userId: string, reason?: string, viaMessageId?: string) => Promise<void>;
+  unbanMember: (id: string, userId: string) => Promise<void>;
+  muteMember: (id: string, userId: string, hours: number, reason?: string, viaMessageId?: string) => Promise<void>;
+  unmuteMember: (id: string, userId: string) => Promise<void>;
   setMemberRole: (id: string, userId: string, roleId: string) => void;
+  // kick notices — shown to someone who was removed, until acknowledged
+  myKickNotices: KickNotice[];
+  acknowledgeKickNotice: (groupId: string) => void;
   // chat
   sendMessage: (id: string, text: string) => void;
   sendPhoto: (id: string, source: "camera" | "library") => Promise<void>;
   editMessage: (id: string, messageId: string, text: string) => void;
   deleteMessage: (id: string, messageId: string) => void;
-  // Group owner (or the message's own flagger-visible sender) clears a flag without deleting —
-  // "false alarm" on the wordlist check.
+  // Owner (or a can_view_flagged-role member) clears a flag without deleting — "false alarm".
   unflagMessage: (id: string, messageId: string) => void;
   canSeeFlagged: (g: Group, message: GroupMessage) => boolean;
-  // group + roles
+  canModerateMessage: (g: Group, message: GroupMessage) => boolean;
+  // group + roles (mock rank/powers roles, unchanged)
   updateGroup: (id: string, patch: Partial<Pick<Group, "name" | "description" | "avatarUri" | "isPrivate" | "rules">>) => void;
   createRole: (id: string, name: string, powers: Powers) => void;
   updateRole: (id: string, roleId: string, patch: Partial<Pick<GroupRole, "name" | "powers">>) => void;
@@ -66,14 +81,14 @@ type GroupsState = {
   // Owner-only broadcast feed.
   postAnnouncement: (id: string, text: string) => void;
   deleteAnnouncement: (id: string, announcementId: string) => void;
-  // FAQ: any member can ask; the owner or a can_answer_faq member answers or rejects.
+  // FAQ: any member can ask; the owner or a can_answer_faq role holder answers or rejects.
   askFaq: (id: string, question: string) => void;
   answerFaq: (id: string, faqId: string, answer: string) => void;
   deleteFaq: (id: string, faqId: string) => void;
   // Owner hands the group to another current member. Irreversible from the old owner's side.
   transferOwnership: (id: string, newOwnerId: string) => Promise<void>;
-  // Re-fetch groups/members/requests/messages/announcements/faqs/bans from Supabase — call when a
-  // groups screen opens so other people's actions (a new request, a message, someone joining) show up.
+  // Re-fetch everything from Supabase — call when a groups screen opens so other people's actions
+  // (a new request, a message, someone joining) show up.
   refreshGroups: () => void;
 };
 
@@ -83,8 +98,7 @@ function nowLabel(): string {
   return formatTime(new Date());
 }
 
-// Shapes of rows from the `groups` / `group_members` / `group_requests` / `group_messages` /
-// `group_announcements` / `group_faqs` / `group_bans` tables (snake_case, as Postgres returns them).
+// Shapes of rows from the groups tables (snake_case, as Postgres returns them).
 type GroupRow = {
   id: string;
   name: string;
@@ -102,7 +116,7 @@ type MemberRow = {
   real_name: string;
   avatar_uri: string;
   role_id: string;
-  can_answer_faq: boolean;
+  custom_role_id: string | null;
   muted_until: string | null;
   joined_at: string;
 };
@@ -152,10 +166,41 @@ type BanRow = {
   name: string;
   banned_at: string;
 };
+type RoleRow = {
+  id: string;
+  group_id: string;
+  name: string;
+  can_kick: boolean;
+  can_answer_faq: boolean;
+  can_view_flagged: boolean;
+};
+type KickedRow = {
+  group_id: string;
+  user_id: string;
+  kicked_at: string;
+  reason: string | null;
+  kicked_by_name: string;
+  kicked_by_real_name: string;
+  acknowledged_at: string | null;
+};
+type LogRow = {
+  id: string;
+  group_id: string;
+  action: "kick" | "ban" | "mute" | "unban" | "unmute";
+  target_user_id: string;
+  target_name: string;
+  target_real_name: string;
+  actor_id: string;
+  actor_name: string;
+  actor_real_name: string;
+  reason: string | null;
+  mute_until: string | null;
+  created_at: string;
+};
 
-// Assembles one real Group from its DB rows. Roles/logs aren't backed by any table yet (see module
-// comment in the migrations) — carried forward from `existing` if this group was already in local
-// state, or seeded fresh otherwise, so local-only role/log edits survive a refetch.
+// Assembles one real Group from its DB rows. `roles`/`logs` (the mock rank/powers system) aren't
+// backed by any table — carried forward from `existing` if this group was already in local state,
+// or seeded fresh otherwise, so local-only role/log edits survive a refetch.
 function buildGroup(
   row: GroupRow,
   members: MemberRow[],
@@ -164,6 +209,9 @@ function buildGroup(
   announcements: AnnouncementRow[],
   faqs: FaqRow[],
   bans: BanRow[],
+  roles: RoleRow[],
+  kicked: KickedRow[],
+  logs: LogRow[],
   existing?: Group
 ): Group {
   const membersById = new Map(members.map((m) => [m.user_id, m]));
@@ -181,7 +229,7 @@ function buildGroup(
       realName: m.real_name,
       avatarUri: m.avatar_uri,
       roleId: m.role_id,
-      canAnswerFaq: m.can_answer_faq,
+      customRoleId: m.custom_role_id ?? undefined,
       mutedUntil: m.muted_until ?? undefined,
       joinedAt: formatShortDate(m.joined_at),
     })),
@@ -222,7 +270,31 @@ function buildGroup(
         createdAt: formatShortDate(f.created_at),
       })),
     roles: existing?.roles ?? defaultRoles(),
+    permissionRoles: roles.map((r) => ({ id: r.id, name: r.name, canKick: r.can_kick, canAnswerFaq: r.can_answer_faq, canViewFlagged: r.can_view_flagged })),
     bans: bans.map((b) => ({ userId: b.user_id, name: b.name, bannedAt: formatShortDate(b.banned_at) })),
+    kickRecords: kicked.map((k) => ({
+      userId: k.user_id,
+      reason: k.reason,
+      kickedAt: formatShortDate(k.kicked_at),
+      kickedByName: k.kicked_by_name,
+      kickedByRealName: k.kicked_by_real_name,
+      acknowledgedAt: k.acknowledged_at,
+    })),
+    moderationLog: [...logs]
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+      .map((l) => ({
+        id: l.id,
+        action: l.action,
+        targetUserId: l.target_user_id,
+        targetName: l.target_name,
+        targetRealName: l.target_real_name,
+        actorId: l.actor_id,
+        actorName: l.actor_name,
+        actorRealName: l.actor_real_name,
+        reason: l.reason,
+        muteUntil: l.mute_until ?? undefined,
+        createdAt: formatShortDate(l.created_at),
+      })),
     logs: existing?.logs ?? [{ id: `log-${row.id}`, text: "Group created", at: formatShortDate(row.created_at) }],
     createdAt: formatShortDate(row.created_at),
   };
@@ -246,7 +318,7 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
       setGroups([]);
       return;
     }
-    const [groupsRes, membersRes, requestsRes, messagesRes, announcementsRes, faqsRes, bansRes] = await Promise.all([
+    const [groupsRes, membersRes, requestsRes, messagesRes, announcementsRes, faqsRes, bansRes, rolesRes, kickedRes, logsRes] = await Promise.all([
       supabase.from("groups").select("*").order("created_at", { ascending: false }),
       supabase.from("group_members").select("*"),
       supabase.from("group_requests").select("*"),
@@ -254,16 +326,20 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
       supabase.from("group_announcements").select("*"),
       supabase.from("group_faqs").select("*"),
       supabase.from("group_bans").select("*"),
+      supabase.from("group_roles").select("*"),
+      supabase.from("group_kicked_users").select("*"),
+      supabase.from("group_moderation_log").select("*"),
     ]);
     if (
       groupsRes.error || membersRes.error || requestsRes.error || messagesRes.error
-      || announcementsRes.error || faqsRes.error || bansRes.error
+      || announcementsRes.error || faqsRes.error || bansRes.error || rolesRes.error
+      || kickedRes.error || logsRes.error
     ) {
       console.error(
         "[groups] fetch failed:",
         groupsRes.error?.message ?? membersRes.error?.message ?? requestsRes.error?.message
           ?? messagesRes.error?.message ?? announcementsRes.error?.message ?? faqsRes.error?.message
-          ?? bansRes.error?.message
+          ?? bansRes.error?.message ?? rolesRes.error?.message ?? kickedRes.error?.message ?? logsRes.error?.message
       );
       return;
     }
@@ -274,6 +350,9 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
     const announcementRows = (announcementsRes.data as AnnouncementRow[] | null) ?? [];
     const faqRows = (faqsRes.data as FaqRow[] | null) ?? [];
     const banRows = (bansRes.data as BanRow[] | null) ?? [];
+    const roleRows = (rolesRes.data as RoleRow[] | null) ?? [];
+    const kickedRows = (kickedRes.data as KickedRow[] | null) ?? [];
+    const logRows = (logsRes.data as LogRow[] | null) ?? [];
 
     setGroups((prev) => {
       const byId = new Map(prev.map((g) => [g.id, g]));
@@ -286,6 +365,9 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
           announcementRows.filter((a) => a.group_id === row.id),
           faqRows.filter((f) => f.group_id === row.id),
           banRows.filter((b) => b.group_id === row.id),
+          roleRows.filter((r) => r.group_id === row.id),
+          kickedRows.filter((k) => k.group_id === row.id),
+          logRows.filter((l) => l.group_id === row.id),
           byId.get(row.id)
         )
       );
@@ -329,6 +411,44 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
   const sortedMembers = (g: Group) =>
     [...g.members].sort((a, b) => memberRank(g, b) - memberRank(g, a));
 
+  // Real per-role permissions. Owner always has every power, regardless of role assignment.
+  const permissionRoleFor = (g: Group, userId: string): PermissionRole | null => {
+    const mem = g.members.find((m) => m.userId === userId);
+    if (!mem?.customRoleId) return null;
+    return g.permissionRoles.find((r) => r.id === mem.customRoleId) ?? null;
+  };
+  const hasRealPower = (g: Group, key: PermissionKey, userId: string = me.userId) => {
+    if (g.ownerId === userId) return true;
+    return !!permissionRoleFor(g, userId)?.[key];
+  };
+  const myPermissionRole = (g: Group) => permissionRoleFor(g, me.userId);
+
+  const createPermissionRole = async (id: string, name: string) => {
+    const { error } = await supabase.from("group_roles").insert({ group_id: id, name });
+    if (error) { console.error("[group_roles] create failed:", error.message); return; }
+    await loadGroups();
+  };
+  const updatePermissionRole = async (id: string, roleId: string, patch: Partial<Pick<PermissionRole, "name" | "canKick" | "canAnswerFaq" | "canViewFlagged">>) => {
+    const dbPatch: Record<string, unknown> = {};
+    if (patch.name !== undefined) dbPatch.name = patch.name;
+    if (patch.canKick !== undefined) dbPatch.can_kick = patch.canKick;
+    if (patch.canAnswerFaq !== undefined) dbPatch.can_answer_faq = patch.canAnswerFaq;
+    if (patch.canViewFlagged !== undefined) dbPatch.can_view_flagged = patch.canViewFlagged;
+    const { error } = await supabase.from("group_roles").update(dbPatch).eq("id", roleId);
+    if (error) { console.error("[group_roles] update failed:", error.message); return; }
+    await loadGroups();
+  };
+  const deletePermissionRole = async (id: string, roleId: string) => {
+    const { error } = await supabase.from("group_roles").delete().eq("id", roleId);
+    if (error) { console.error("[group_roles] delete failed:", error.message); return; }
+    await loadGroups();
+  };
+  const assignPermissionRole = async (id: string, userId: string, roleId: string | null) => {
+    const { error } = await supabase.from("group_members").update({ custom_role_id: roleId }).eq("group_id", id).eq("user_id", userId);
+    if (error) { console.error("[group_members] assign permission role failed:", error.message); return; }
+    await loadGroups();
+  };
+
   const patch = (id: string, fn: (g: Group) => Group) =>
     setGroups((prev) => prev.map((g) => (g.id === id ? fn(g) : g)));
 
@@ -356,7 +476,7 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
   const addMember = (g: Group, u: CurrentGroupUser, roleId = "member"): Group =>
     g.members.some((m) => m.userId === u.userId)
       ? g
-      : { ...g, members: [...g.members, { userId: u.userId, name: u.name, realName: u.realName, avatarUri: u.avatarUri, roleId, joinedAt: "Just now", canAnswerFaq: false }] };
+      : { ...g, members: [...g.members, { userId: u.userId, name: u.name, realName: u.realName, avatarUri: u.avatarUri, roleId, joinedAt: "Just now" }] };
 
   // Real: routes through the join_public_group() RPC, which decides server-side whether this
   // becomes an instant membership (public group, never kicked/banned), a join request (private, or
@@ -413,7 +533,7 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
       const req = g.requests.find((r) => r.userId === userId);
       if (!req) return g;
       const added = addMember({ ...g, requests: g.requests.filter((r) => r.userId !== userId) }, req);
-      return withLog(added, `${me.name} accepted ${req.name}`);
+      return withLog(added, `${displayName(me.name, me.realName)} accepted ${displayName(req.name, req.realName)}`);
     });
     supabase
       .rpc("accept_group_request", { target_group_id: id, target_user_id: userId })
@@ -423,7 +543,7 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
   const declineRequest = (id: string, userId: string) => {
     patch(id, (g) => {
       const req = g.requests.find((r) => r.userId === userId);
-      return withLog({ ...g, requests: g.requests.filter((r) => r.userId !== userId) }, `${me.name} declined ${req?.name ?? "a request"}`);
+      return withLog({ ...g, requests: g.requests.filter((r) => r.userId !== userId) }, `${displayName(me.name, me.realName)} declined ${req ? displayName(req.name, req.realName) : "a request"}`);
     });
     supabase
       .from("group_requests")
@@ -433,96 +553,93 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
       .then(({ error }) => { if (error) console.error("[group_requests] decline failed:", error.message); });
   };
 
-  // Real. Also records a group_kicked_users row, so rejoining a public group routes through the
-  // request/approval flow from now on (see join_public_group()), same as a private group.
-  const kickMember = (id: string, userId: string) => {
-    patch(id, (g) => {
-      const mem = g.members.find((m) => m.userId === userId);
-      return withLog({ ...g, members: g.members.filter((m) => m.userId !== userId) }, `${me.name} kicked ${mem?.name ?? "a member"}`);
-    });
-    supabase
-      .from("group_members")
-      .delete()
-      .eq("group_id", id)
-      .eq("user_id", userId)
-      .then(({ error }) => { if (error) console.error("[group_members] kick failed:", error.message); });
-    supabase
-      .from("group_kicked_users")
-      .insert({ group_id: id, user_id: userId })
-      .then(({ error }) => { if (error) console.error("[group_kicked_users] record failed:", error.message); });
+  const kickRecordFor = (g: Group, userId: string) => g.kickRecords.find((k) => k.userId === userId);
+
+  // Real, via kick_group_member() — server-side checks the caller is the owner, has the can_kick
+  // role power, or (only when viaMessageId is a flagged message from this exact user) has the
+  // can_view_flagged role power. Also records a group_kicked_users row so rejoining a public group
+  // routes through the request/approval flow from now on (see join_public_group()).
+  const kickMember = async (id: string, userId: string, reason?: string, viaMessageId?: string) => {
+    const mem = getGroup(id)?.members.find((m) => m.userId === userId);
+    patch(id, (g) => withLog({ ...g, members: g.members.filter((m) => m.userId !== userId) }, `${displayName(me.name, me.realName)} kicked ${mem ? displayName(mem.name, mem.realName) : "a member"}${reason ? `: ${reason}` : ""}`));
+    const { error } = await supabase.rpc("kick_group_member", { target_group_id: id, target_user_id: userId, reason: reason ?? null, via_message_id: viaMessageId ?? null });
+    if (error) console.error("[kick_group_member] failed:", error.message);
+    await loadGroups();
   };
 
-  // Real — removes membership and records a permanent group_bans row blocking rejoin entirely
-  // (both instant public join and the request flow). See unbanMember to reverse it.
-  const banMember = (id: string, userId: string) => {
-    const group = getGroup(id);
-    const mem = group?.members.find((m) => m.userId === userId);
+  // Real, via ban_group_member() — same authorization rule as kick. Permanent until unbanMember.
+  const banMember = async (id: string, userId: string, reason?: string, viaMessageId?: string) => {
+    const mem = getGroup(id)?.members.find((m) => m.userId === userId);
     patch(id, (g) =>
       withLog(
         { ...g, members: g.members.filter((m) => m.userId !== userId), bans: [...g.bans, { userId, name: mem?.name ?? "Member", bannedAt: nowLabel() }] },
-        `${me.name} banned ${mem?.name ?? "a member"}`
+        `${displayName(me.name, me.realName)} banned ${mem ? displayName(mem.name, mem.realName) : "a member"}${reason ? `: ${reason}` : ""}`
       )
     );
-    supabase
-      .from("group_members")
-      .delete()
-      .eq("group_id", id)
-      .eq("user_id", userId)
-      .then(({ error }) => { if (error) console.error("[group_members] ban-removal failed:", error.message); });
-    supabase
-      .from("group_bans")
-      .insert({ group_id: id, user_id: userId, banned_by: me.userId, name: mem?.name ?? "Member" })
-      .then(({ error }) => { if (error) console.error("[group_bans] ban failed:", error.message); });
+    const { error } = await supabase.rpc("ban_group_member", { target_group_id: id, target_user_id: userId, reason: reason ?? null, via_message_id: viaMessageId ?? null });
+    if (error) console.error("[ban_group_member] failed:", error.message);
+    await loadGroups();
   };
 
-  // Owner-only, not asked for explicitly but added deliberately — a permanent ban with literally
-  // no way to reverse it is a bad default.
-  const unbanMember = (id: string, userId: string) => {
+  // Owner-only (see unban_group_member) — a permanent ban with no way to reverse it is a bad
+  // default, so this exists even though it wasn't asked for explicitly.
+  const unbanMember = async (id: string, userId: string) => {
     patch(id, (g) => ({ ...g, bans: g.bans.filter((b) => b.userId !== userId) }));
-    supabase
-      .from("group_bans")
-      .delete()
-      .eq("group_id", id)
-      .eq("user_id", userId)
-      .then(({ error }) => { if (error) console.error("[group_bans] unban failed:", error.message); });
+    const { error } = await supabase.rpc("unban_group_member", { target_group_id: id, target_user_id: userId });
+    if (error) console.error("[unban_group_member] failed:", error.message);
+    await loadGroups();
   };
 
-  // Owner-only. Blocks that member from sending group chat messages until `hours` from now.
-  const muteMember = (id: string, userId: string, hours: number) => {
+  // Real, via mute_group_member() — same authorization rule as kick/ban. Blocks that member from
+  // sending group chat messages until `hours` from now.
+  const muteMember = async (id: string, userId: string, hours: number, reason?: string, viaMessageId?: string) => {
     const until = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
     patch(id, (g) =>
       withLog(
         { ...g, members: g.members.map((m) => (m.userId === userId ? { ...m, mutedUntil: until } : m)) },
-        `${me.name} muted a member`
+        `${displayName(me.name, me.realName)} muted a member${reason ? `: ${reason}` : ""}`
       )
     );
-    supabase
-      .from("group_members")
-      .update({ muted_until: until })
-      .eq("group_id", id)
-      .eq("user_id", userId)
-      .then(({ error }) => { if (error) console.error("[group_members] mute failed:", error.message); });
+    const { error } = await supabase.rpc("mute_group_member", { target_group_id: id, target_user_id: userId, minutes: Math.round(hours * 60), reason: reason ?? null, via_message_id: viaMessageId ?? null });
+    if (error) console.error("[mute_group_member] failed:", error.message);
+    await loadGroups();
   };
 
-  // Owner-only. Grants/revokes the ability to answer pending FAQ questions — the owner can always
-  // answer regardless of this flag.
-  const toggleCanAnswerFaq = (id: string, userId: string, value: boolean) => {
-    patch(id, (g) => ({ ...g, members: g.members.map((m) => (m.userId === userId ? { ...m, canAnswerFaq: value } : m)) }));
-    supabase
-      .from("group_members")
-      .update({ can_answer_faq: value })
-      .eq("group_id", id)
-      .eq("user_id", userId)
-      .then(({ error }) => { if (error) console.error("[group_members] can_answer_faq update failed:", error.message); });
+  // Owner-only.
+  const unmuteMember = async (id: string, userId: string) => {
+    patch(id, (g) => ({ ...g, members: g.members.map((m) => (m.userId === userId ? { ...m, mutedUntil: undefined } : m)) }));
+    const { error } = await supabase.rpc("unmute_group_member", { target_group_id: id, target_user_id: userId });
+    if (error) console.error("[unmute_group_member] failed:", error.message);
+    await loadGroups();
   };
 
-  // Local/mock only — no group_roles table yet.
+  // Local/mock only — no group_roles-style backing for the rank/powers system itself.
   const setMemberRole = (id: string, userId: string, roleId: string) =>
     patch(id, (g) => {
       const mem = g.members.find((m) => m.userId === userId);
       const updated = { ...g, members: g.members.map((m) => (m.userId === userId ? { ...m, roleId } : m)) };
-      return withLog(updated, `${me.name} made ${mem?.name ?? "a member"} ${getRole(g, roleId)?.name ?? roleId}`);
+      return withLog(updated, `${displayName(me.name, me.realName)} made ${mem ? displayName(mem.name, mem.realName) : "a member"} ${getRole(g, roleId)?.name ?? roleId}`);
     });
+
+  // Kick notices — for the current user, everywhere they've been kicked and haven't acknowledged.
+  const myKickNotices: KickNotice[] = groups.flatMap((g) =>
+    g.kickRecords
+      .filter((k) => k.userId === me.userId && k.acknowledgedAt == null)
+      .map((k) => ({ groupId: g.id, groupName: g.name, reason: k.reason, kickedAt: k.kickedAt, acknowledgedAt: k.acknowledgedAt }))
+  );
+
+  const acknowledgeKickNotice = (groupId: string) => {
+    patch(groupId, (g) => ({
+      ...g,
+      kickRecords: g.kickRecords.map((k) => (k.userId === me.userId ? { ...k, acknowledgedAt: nowLabel() } : k)),
+    }));
+    supabase
+      .from("group_kicked_users")
+      .update({ acknowledged_at: new Date().toISOString() })
+      .eq("group_id", groupId)
+      .eq("user_id", me.userId)
+      .then(({ error }) => { if (error) console.error("[group_kicked_users] acknowledge failed:", error.message); });
+  };
 
   const sendMessage = (id: string, text: string) => {
     const messageId = generateId();
@@ -556,10 +673,13 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
   };
 
   // A flagged message is hidden from regular members client-side (index.tsx renders a placeholder
-  // instead) — only the sender and the real group owner see the real content, standing in for
-  // "admins only" until there's a real backend admin role.
+  // instead) — the sender, the real group owner, and any can_view_flagged role holder see it.
   const canSeeFlagged = (g: Group, message: GroupMessage) =>
-    message.senderId === me.userId || g.ownerId === me.userId;
+    message.senderId === me.userId || hasRealPower(g, "canViewFlagged");
+  // Whether the current user can dismiss/delete a flagged message (owner or can_view_flagged role
+  // — never the sender, even though they can see their own flagged message).
+  const canModerateMessage = (g: Group, message: GroupMessage) =>
+    !!message.flagged && message.senderId !== me.userId && hasRealPower(g, "canViewFlagged");
 
   const unflagMessage = (id: string, messageId: string) => {
     patch(id, (g) => ({ ...g, messages: g.messages.map((m) => (m.id === messageId ? { ...m, flagged: false } : m)) }));
@@ -579,18 +699,23 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
       .then(({ error }) => { if (error) console.error("[group_messages] edit failed:", error.message); });
   };
 
-  // Flagged messages are now permanent — no one, not even the owner, can delete one (only dismiss
-  // its flag). Deleting your own unflagged message, or the owner deleting anyone's unflagged
-  // message, still works as before.
+  // A flagged message can never be deleted by its own sender — only the owner or a
+  // can_view_flagged role holder can delete one (enforced server-side too, see the migration).
+  // An unflagged message still works as before: the sender deletes their own, or the mock
+  // "deleteMessages" power deletes anyone's.
   const deleteMessage = (id: string, messageId: string) => {
     const group = getGroup(id);
     const msg = group?.messages.find((m) => m.id === messageId);
-    if (!msg || msg.flagged) return;
+    if (!msg || !group) return;
+    const mine = msg.senderId === me.userId;
+    const qualifiesForFlagged = hasRealPower(group, "canViewFlagged");
+    if (msg.flagged && (mine || !qualifiesForFlagged)) return;
     patch(id, (g) => {
+      const sender = g.members.find((m) => m.userId === msg.senderId);
       const updated = { ...g, messages: g.messages.map((m) => (m.id === messageId ? { ...m, deleted: true } : m)) };
-      return msg.senderId !== me.userId ? withLog(updated, `${me.name} deleted a message from ${msg.senderName}`) : updated;
+      return !mine ? withLog(updated, `${displayName(me.name, me.realName)} deleted a message from ${sender ? displayName(sender.name, sender.realName) : msg.senderName}`) : updated;
     });
-    if (msg.senderId === me.userId || group?.ownerId === me.userId) {
+    if (mine || can(group, "deleteMessages") || qualifiesForFlagged) {
       supabase
         .from("group_messages")
         .update({ deleted: true })
@@ -603,7 +728,7 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
   // local-only for now, matching the mock role/power system's scope.
   const updateGroup = (id: string, p: Partial<Pick<Group, "name" | "description" | "avatarUri" | "isPrivate" | "rules">>) => {
     const group = getGroup(id);
-    patch(id, (g) => withLog({ ...g, ...p }, `${me.name} updated the group settings`));
+    patch(id, (g) => withLog({ ...g, ...p }, `${displayName(me.name, me.realName)} updated the group settings`));
     if (group && group.ownerId === me.userId) {
       const dbPatch: Record<string, unknown> = {};
       if (p.name !== undefined) dbPatch.name = p.name;
@@ -652,7 +777,7 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
       .then(({ error }) => { if (error) console.error("[group_faqs] ask failed:", error.message); });
   };
 
-  // Owner or a can_answer_faq member — real (see the migration's update policy).
+  // Owner or a can_answer_faq role holder — real (see the migration's update policy).
   const answerFaq = (id: string, faqId: string, answer: string) => {
     const answeredAt = nowLabel();
     patch(id, (g) => ({
@@ -688,12 +813,12 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
     await loadGroups();
   };
 
-  // Local/mock only — no group_roles table yet.
+  // Local/mock only — no backing table for the rank/powers role system itself.
   const createRole = (id: string, name: string, powers: Powers) =>
-    patch(id, (g) => withLog({ ...g, roles: [...g.roles, { id: nextId("role"), name, rank: 50, powers }] }, `${me.name} created the ${name} role`));
+    patch(id, (g) => withLog({ ...g, roles: [...g.roles, { id: nextId("role"), name, rank: 50, powers }] }, `${displayName(me.name, me.realName)} created the ${name} role`));
 
   const updateRole = (id: string, roleId: string, p: Partial<Pick<GroupRole, "name" | "powers">>) =>
-    patch(id, (g) => withLog({ ...g, roles: g.roles.map((r) => (r.id === roleId ? { ...r, ...p } : r)) }, `${me.name} updated the ${getRole(g, roleId)?.name ?? "a"} role`));
+    patch(id, (g) => withLog({ ...g, roles: g.roles.map((r) => (r.id === roleId ? { ...r, ...p } : r)) }, `${displayName(me.name, me.realName)} updated the ${getRole(g, roleId)?.name ?? "a"} role`));
 
   const deleteRole = (id: string, roleId: string) =>
     patch(id, (g) =>
@@ -703,7 +828,7 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
           roles: g.roles.filter((r) => r.id !== roleId),
           members: g.members.map((m) => (m.roleId === roleId ? { ...m, roleId: "member" } : m)),
         },
-        `${me.name} deleted the ${getRole(g, roleId)?.name ?? "a"} role`
+        `${displayName(me.name, me.realName)} deleted the ${getRole(g, roleId)?.name ?? "a"} role`
       )
     );
 
@@ -716,9 +841,11 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
         me, groups, myGroups, discoverGroups, getGroup, isMember, hasRequested, isBanned,
         joinLimit, joinedCount, atJoinLimit,
         myRole, myRank, can, isStaff, canActOn, assignableRoles, sortedMembers,
+        hasRealPower, myPermissionRole, createPermissionRole, updatePermissionRole, deletePermissionRole, assignPermissionRole,
         createGroup, joinGroup, requestJoin, cancelRequest, leaveGroup,
-        acceptRequest, declineRequest, kickMember, banMember, unbanMember, muteMember, toggleCanAnswerFaq, setMemberRole,
-        sendMessage, sendPhoto, editMessage, deleteMessage, unflagMessage, canSeeFlagged,
+        acceptRequest, declineRequest, kickRecordFor, kickMember, banMember, unbanMember, muteMember, unmuteMember, setMemberRole,
+        myKickNotices, acknowledgeKickNotice,
+        sendMessage, sendPhoto, editMessage, deleteMessage, unflagMessage, canSeeFlagged, canModerateMessage,
         updateGroup, createRole, updateRole, deleteRole,
         postAnnouncement, deleteAnnouncement, askFaq, answerFaq, deleteFaq, transferOwnership,
         refreshGroups,

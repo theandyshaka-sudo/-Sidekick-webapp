@@ -54,9 +54,37 @@ export type GroupMember = {
   avatarUri: string;
   roleId: string;
   joinedAt: string;
-  canAnswerFaq: boolean;
   mutedUntil?: string;
+  // Real, DB-backed permission assignment — separate from `roleId` above, which stays the local
+  // mock rank/powers system. Points at a `group_roles` row (or undefined = no elevated real power).
+  customRoleId?: string;
 };
+
+// Real, DB-backed permission roles (group_roles table) — kick/mute/ban, answer FAQs, and view/act
+// on flagged messages. Deliberately separate from the mock GroupRole/Powers system above (rank,
+// acceptRequests, editGroup, deleteMessages, ban, assignRoles, manageRoles all stay local-only).
+export type PermissionRole = {
+  id: string;
+  name: string;
+  canKick: boolean;
+  canAnswerFaq: boolean;
+  canViewFlagged: boolean;
+};
+
+// Rules are stored as one text column ("1. ...\n2. ...\n3. ...") but edited/displayed as a
+// numbered list. Any line that isn't already numbered becomes item 1 so nothing pre-existing is lost.
+export function parseRules(text: string): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  const lines = trimmed.split("\n").map((l) => l.trim()).filter(Boolean);
+  const numbered = lines.filter((l) => /^\d+\.\s*/.test(l));
+  if (numbered.length === 0) return [trimmed];
+  return lines.map((l) => l.replace(/^\d+\.\s*/, ""));
+}
+
+export function serializeRules(items: string[]): string {
+  return items.map((item, i) => `${i + 1}. ${item}`).join("\n");
+}
 
 export type GroupMessage = {
   id: string;
@@ -104,6 +132,33 @@ export type GroupLog = { id: string; text: string; at: string };
 
 export type GroupBan = { userId: string; name: string; bannedAt: string };
 
+// A pending/past kick record for this group — real, from group_kicked_users. Used both to warn
+// the owner reviewing a rejoin request, and (filtered to the current user) to notify someone
+// they were removed.
+export type GroupKickRecord = {
+  userId: string;
+  reason: string | null;
+  kickedAt: string;
+  kickedByName: string;
+  kickedByRealName: string;
+  acknowledgedAt: string | null;
+};
+
+export type ModerationAction = "kick" | "ban" | "mute" | "unban" | "unmute";
+export type ModerationLogEntry = {
+  id: string;
+  action: ModerationAction;
+  targetUserId: string;
+  targetName: string;
+  targetRealName: string;
+  actorId: string;
+  actorName: string;
+  actorRealName: string;
+  reason: string | null;
+  muteUntil?: string;
+  createdAt: string;
+};
+
 export type Group = {
   id: string;
   name: string;
@@ -118,7 +173,10 @@ export type Group = {
   announcements: GroupAnnouncement[];
   faqs: GroupFaq[];
   roles: GroupRole[];
+  permissionRoles: PermissionRole[]; // real — from group_roles
   bans: GroupBan[]; // real — from group_bans
+  kickRecords: GroupKickRecord[]; // real — from group_kicked_users
+  moderationLog: ModerationLogEntry[]; // real — from group_moderation_log
   logs: GroupLog[]; // audit trail (president/staff only) — still local/mock
   createdAt: string;
 };
@@ -128,6 +186,11 @@ export function getRole(group: Group, roleId: string): GroupRole | undefined {
 }
 export function roleName(group: Group, roleId: string): string {
   return getRole(group, roleId)?.name ?? roleId;
+}
+
+// "RealName (BusinessName)", falling back gracefully when there's no real name on file.
+export function displayName(name: string, realName?: string | null): string {
+  return realName && realName.trim() && realName !== name ? `${realName} (${name})` : name;
 }
 export function memberRank(group: Group, member: GroupMember): number {
   return getRole(group, member.roleId)?.rank ?? 0;

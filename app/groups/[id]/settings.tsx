@@ -93,11 +93,14 @@ export default function GroupSettings() {
           </View>
         ) : null}
 
-        {group.ownerId === g.me.userId ? (
+        {group.ownerId === g.me.userId || g.hasRealPower(group, "canKick") || g.hasRealPower(group, "canViewFlagged") ? (
           <>
             <Text className="mb-3 mt-7 text-xs font-semibold uppercase tracking-wider text-muted">Moderation</Text>
             <View className="gap-2.5">
-              <Row icon="ban-outline" label="Banned members" sub={`${group.bans.length} banned`} onPress={() => router.push(`/groups/${group.id}/banned`)} />
+              {group.ownerId === g.me.userId ? (
+                <Row icon="ban-outline" label="Banned & muted members" sub={`${group.bans.length} banned`} onPress={() => router.push(`/groups/${group.id}/banned`)} />
+              ) : null}
+              <Row icon="document-text-outline" label="Kick, ban & mute log" sub={`${group.moderationLog.length} entries`} onPress={() => router.push(`/groups/${group.id}/moderation-log`)} />
             </View>
           </>
         ) : null}

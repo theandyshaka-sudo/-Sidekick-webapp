@@ -64,7 +64,7 @@ export default function WorkerGroups() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const palette = useRolePalette();
-  const { myGroups, discoverGroups, joinGroup, requestJoin, hasRequested, atJoinLimit, joinLimit, joinedCount, refreshGroups } = useGroups();
+  const { myGroups, discoverGroups, joinGroup, requestJoin, hasRequested, atJoinLimit, joinLimit, joinedCount, refreshGroups, myKickNotices, acknowledgeKickNotice } = useGroups();
 
   useEffect(() => {
     refreshGroups();
@@ -89,6 +89,18 @@ export default function WorkerGroups() {
             <Text className="text-sm font-semibold" style={{ color: palette.primaryFg }}>Create</Text>
           </Pressable>
         </View>
+
+        {myKickNotices.map((notice) => (
+          <View key={notice.groupId} className="mb-3 flex-row items-start gap-2 rounded-2xl border p-3.5" style={{ borderColor: palette.danger + "55", backgroundColor: palette.danger + "11" }}>
+            <Ionicons name="alert-circle-outline" size={16} color={palette.danger} />
+            <Text className="flex-1 text-xs leading-5" style={{ color: palette.danger }}>
+              You were removed from {notice.groupName}{notice.reason ? `: ${notice.reason}` : ""}.
+            </Text>
+            <Pressable onPress={() => acknowledgeKickNotice(notice.groupId)} hitSlop={8}>
+              <Ionicons name="close" size={16} color={palette.danger} />
+            </Pressable>
+          </View>
+        ))}
 
         <Text className="mb-1 text-xs leading-5 text-muted">
           Join communities to learn techniques and grow your business with other owners.

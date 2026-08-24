@@ -1,5 +1,118 @@
 @AGENTS.md
 
+## Session notes — where we left off (2026-08-24, later same day)
+
+**⚠️ NEXT STEP — NOTHING BELOW HAS BEEN TESTED. Run the new migration first, exactly like the
+prior entry's instructions:** open `supabase/migrations/20260824130000_add_group_role_permissions.sql`
+in your editor (not a chat window — copying long lines from chat/terminal has twice now mangled
+comment line-wraps and broken the SQL Editor) and paste the whole file into a cleared SQL Editor
+pane, then Run. This file is comment-light on purpose. `tsc --noEmit` passes clean on the code side.
+
+### What changed, following up on user feedback from testing the earlier 2026-08-24 batch
+
+1. **Tab bar label reverted** — "Announce" → "Announcements" (full word). Kept it one row by
+   shrinking font size (9.5px, `adjustsFontSizeToFit`) instead of truncating the label.
+
+2. **FAQ-answer permission is now a real per-ROLE flag, not a per-member toggle.** New
+   `group_roles` table (`name`, `can_kick`, `can_answer_faq`, `can_view_flagged`) + a new
+   `group_members.custom_role_id` column. This is a **separate system from the existing mock
+   rank/powers "Custom roles"** (president/VP/member, `acceptRequests`/`editGroup`/etc.) —
+   deliberately not merged in, since the mock system isn't persisted server-side for anything but
+   display, and merging real + fake power flags into one UI risked real bugs. `roles.tsx` now has
+   two clearly separate sections: "Real permissions" (new, RLS-enforced) above "Custom roles"
+   (unchanged, still mock/local). The owner assigns a member to a real permission role from the
+   Members tab → tap a member → "Set permission role". Last session's `can_answer_faq` boolean
+   column on `group_members` and its "tap a member → Allow answering FAQs" action are both gone.
+
+3. **FAQ delete already worked for answered entries too** — turned out to be a non-issue on
+   inspection; the existing RLS delete policy and UI `canDelete` check never restricted to pending
+   only. No change needed there beyond carrying the permission source over correctly.
+
+4. **Flagged messages: owner (or a `can_view_flagged` role holder) can now delete one; the sender
+   never can.** Previously *nobody* could delete a flagged message (last session's rule, now
+   reversed per this feedback) — dismiss-flag-only was too strict. RLS `with check` blocks
+   specifically `sender AND flagged AND deleted`, so the sender's own edit/dismiss attempts on
+   their unflagged messages are untouched. Visibility of a flagged message also widened from
+   "owner + sender only" to "owner, sender, or `can_view_flagged` role holder" (still a client-side
+   render decision in `index.tsx`/`canSeeFlagged`, not RLS — same architecture as before, just a
+   wider allowlist). **The admin Reports console's flagged-messages list had a real gap**: it
+   showed every flagged message from every group the signed-in account was a *member* of, with no
+   permission check at all (`app/admin/reports.tsx`) — now filtered through the same
+   `canSeeFlagged` check, and given the same delete/dismiss/mute/kick/ban actions as the in-chat
+   menu.
+
+5. **Mute/kick/ban are now real RPCs with a shared, server-enforced authorization rule**
+   (`group_can_moderate()`): the owner or a `can_kick`-role member can act on anyone; a
+   `can_view_flagged`-role member (without `can_kick`) can only act on the sender of a specific
+   flagged message they're acting through (`via_message_id`, verified server-side against
+   `group_messages` — not just hidden in the UI). Tapping a flagged message (in-chat or in the
+   admin console) now surfaces Mute/Kick/Ban options scoped to its sender via this mechanism.
+   **Extension beyond what was literally asked** (only kick was requested to be scoped this way) —
+   applied the same scoping to mute and ban too, since the message menu presents all three together
+   and scoping only one would be a confusing inconsistency.
+
+6. **Kick/ban/mute/unban/unmute audit log** — new `group_moderation_log` table, written only by
+   the RPCs (no client insert policy). New screen `app/groups/[id]/moderation-log.tsx`, linked from
+   Settings, visible to the owner or anyone with `can_kick`/`can_view_flagged`. Every place that
+   already displayed "who did this" (`GroupsContext`'s local mock `logs` array, this new real log)
+   now formats names as `RealName (BusinessName)` via a new `displayName()` helper in
+   `groupsMock.ts`, not just the business name.
+
+7. **Kicking now captures an optional reason**, shown to the kicked person and to the owner
+   reviewing their next join request. `group_kicked_users` gained `reason`, `kicked_by(_name/
+   _real_name)`, `acknowledged_at`. A small dismissible red banner appears on the Groups list
+   (`app/worker/groups.tsx`) for anyone with an un-acknowledged kick — "You were removed from X:
+   reason". `app/groups/[id]/requests.tsx` now shows an inline warning on a request if that
+   requester has a `group_kicked_users` row for this group: "This person was kicked from this
+   group on \<date\> for \<reason\>" — works for public and private groups alike.
+
+8. **Double-checked the public-group rejoin rule from last session — confirmed correct, no
+   change needed:** `join_public_group()` still lets anyone join a public group instantly unless
+   they have a `group_kicked_users` row for it (then routed into `group_requests` for approval,
+   same as a private group); banned users are blocked at the RPC level entirely.
+
+9. **Rules are now a real numbered list**, not a single free-text blob edited via a form field.
+   Still just one `groups.rules` text column underneath (`"1. ...\n2. ...\n3. ..."`,
+   parse/serialize helpers in `groupsMock.ts`) — the Rules tab in `index.tsx` now has "Add a rule",
+   and each rule renders in its own row with inline edit/delete. `edit.tsx`'s raw multiline rules
+   field was left alone (still works, just not the primary way to manage rules day-to-day).
+
+10. **Banned members screen also lists currently-muted members now** (remaining mute time,
+    "Unmute"), retitled "Banned & muted members". Confirmed unban/unmute are owner-only both in the
+    RPCs (`unban_group_member`/`unmute_group_member` check `owner_id = auth.uid()` directly, not
+    `group_can_moderate()`) and in the UI (only the owner sees the "Banned & muted members" Settings
+    row) — a `can_kick`/`can_view_flagged` role holder can mute/kick/ban but never reverse one.
+
+11. **Admin/developer passcode changed** — it's no longer `1458`. Current value, from
+    `app/admin-login.tsx`: **`Rocky1234Andy`**. Not something this session changed, just found and
+    reporting it since the user believed it had changed and wasn't sure to what.
+
+### Testing checklist for next session
+
+1. Tab bar shows the full word "Announcements" and still fits one row.
+2. As owner: Roles & permissions → create a permission role → toggle "Answer FAQs" on → assign it
+   to a member (Members tab → their name → Set permission role). That member should now see a
+   pending FAQ question and be able to answer it; a member with no role should not see it at all.
+3. Owner deletes an already-answered FAQ entry — confirm it still works (should already have).
+4. Send a flagged message as a non-owner, non-role member. Confirm the owner (and a
+   `can_view_flagged` role holder) can see it, delete it, dismiss it, and open Mute/Kick/Ban on the
+   sender directly from the message — and confirm the sender themselves has none of those options
+   on their own flagged message.
+5. Give a member ONLY `can_view_flagged` (not `can_kick`). Confirm they can mute/kick/ban the
+   sender of a flagged message, but get rejected (or don't see the option at all) trying to kick an
+   unrelated member from the Members tab.
+6. Kick someone with a reason typed in. Confirm they see the reason on the Groups list banner, and
+   that the owner sees "kicked on \<date\> for \<reason\>" if that person tries to rejoin.
+7. Check the new "Kick, ban & mute log" screen (Settings) shows entries formatted as `Real Name
+   (Business Name)` for both actor and target.
+8. Banned & muted members screen: confirm a live mute shows up with remaining time, Unmute works,
+   and a second (non-owner, `can_kick`) account can't reach this screen at all.
+9. Rules tab: Add a rule, edit one, delete one, confirm numbering stays correct and it persists
+   after leaving/reopening the group.
+10. Confirm the admin Reports console's flagged-messages section only shows flags the signed-in
+    account actually has permission to see, and that its Mute/Kick/Ban/Delete actions there work
+    the same as the in-chat ones.
+
 ## Session notes — where we left off (2026-08-24)
 
 **⚠️ NEXT STEP — the 2026-08-21 Groups batch (announcements/rules/FAQ/photos/flagging/ownership

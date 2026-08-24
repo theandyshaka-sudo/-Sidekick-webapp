@@ -8,7 +8,53 @@ import { PrimaryButton } from "../../../src/components/PrimaryButton";
 import { ToggleRow } from "../../../src/components/ToggleRow";
 import { useGroups } from "../../../src/context/GroupsContext";
 import { useRolePalette } from "../../../src/theme/useRolePalette";
-import { NO_POWERS, POWERS, type GroupRole, type PowerKey, type Powers } from "../../../src/data/groupsMock";
+import { NO_POWERS, POWERS, type GroupRole, type PermissionRole, type PowerKey, type Powers } from "../../../src/data/groupsMock";
+
+const PERMISSION_TOGGLES: Array<{ key: "canKick"; label: string; desc: string; icon: keyof typeof Ionicons.glyphMap }
+  | { key: "canAnswerFaq"; label: string; desc: string; icon: keyof typeof Ionicons.glyphMap }
+  | { key: "canViewFlagged"; label: string; desc: string; icon: keyof typeof Ionicons.glyphMap }> = [
+  { key: "canKick", label: "Mute, kick & ban", desc: "Act on any member — not just flagged-message senders", icon: "exit-outline" },
+  { key: "canAnswerFaq", label: "Answer FAQs", desc: "See and answer pending questions before they're public", icon: "help-buoy-outline" },
+  { key: "canViewFlagged", label: "View & act on flagged messages", desc: "See flagged chat messages and mute/kick/ban whoever sent them", icon: "flag-outline" },
+];
+
+function PermissionRoleCard({ role, memberCount, onUpdate, onDelete }: {
+  role: PermissionRole;
+  memberCount: number;
+  onUpdate: (patch: Partial<Pick<PermissionRole, "canKick" | "canAnswerFaq" | "canViewFlagged">>) => void;
+  onDelete: () => void;
+}) {
+  const palette = useRolePalette();
+  const [open, setOpen] = useState(false);
+  const on = [role.canKick, role.canAnswerFaq, role.canViewFlagged].filter(Boolean).length;
+  return (
+    <View className="rounded-2xl border border-border bg-surface">
+      <Pressable onPress={() => setOpen((o) => !o)} className="flex-row items-center gap-3 p-4 active:opacity-70">
+        <View className="h-9 w-9 items-center justify-center rounded-full" style={{ backgroundColor: palette.primarySoft }}>
+          <Ionicons name="shield-checkmark" size={16} color={palette.primary} />
+        </View>
+        <View className="flex-1">
+          <Text className="text-sm font-bold text-text">{role.name}</Text>
+          <Text className="text-xs text-muted">{memberCount} member{memberCount === 1 ? "" : "s"} · {on === 0 ? "no powers" : `${on} power${on === 1 ? "" : "s"}`}</Text>
+        </View>
+        <Ionicons name={open ? "chevron-up" : "chevron-down"} size={18} color={palette.muted} />
+      </Pressable>
+      {open ? (
+        <View className="border-t border-border p-4">
+          <View className="gap-2.5">
+            {PERMISSION_TOGGLES.map((p) => (
+              <ToggleRow key={p.key} icon={p.icon} label={p.label} description={p.desc} value={role[p.key]} onValueChange={(v) => onUpdate({ [p.key]: v })} />
+            ))}
+          </View>
+          <Pressable onPress={onDelete} className="mt-4 flex-row items-center justify-center gap-1.5 rounded-xl border border-border py-2.5 active:opacity-70">
+            <Ionicons name="trash-outline" size={15} color={palette.danger} />
+            <Text className="text-sm font-semibold" style={{ color: palette.danger }}>Delete permission role</Text>
+          </Pressable>
+        </View>
+      ) : null}
+    </View>
+  );
+}
 
 const POWER_ICON: Record<PowerKey, keyof typeof Ionicons.glyphMap> = {
   acceptRequests: "person-add-outline",
@@ -39,6 +85,10 @@ export default function GroupRoles() {
   const [newPowers, setNewPowers] = useState<Powers>({ ...NO_POWERS });
   const [error, setError] = useState<string | null>(null);
 
+  const [creatingPermission, setCreatingPermission] = useState(false);
+  const [newPermissionName, setNewPermissionName] = useState("");
+  const [permissionError, setPermissionError] = useState<string | null>(null);
+
   if (!group) {
     return (
       <View className="flex-1 bg-bg"><ScreenHeader title="Roles & permissions" /><View className="flex-1 items-center justify-center"><Text className="text-sm text-muted">Group not found.</Text></View></View>
@@ -56,12 +106,55 @@ export default function GroupRoles() {
     setError(null);
   };
 
+  const createPermissionRole = () => {
+    if (!newPermissionName.trim()) return setPermissionError("Name your new permission role.");
+    g.createPermissionRole(group.id, newPermissionName.trim());
+    setCreatingPermission(false);
+    setNewPermissionName("");
+    setPermissionError(null);
+  };
+
   return (
     <View className="flex-1 bg-bg">
       <ScreenHeader title="Roles & permissions" />
       <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+        <Text className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">Real permissions</Text>
         <Text className="mb-4 text-sm leading-6 text-muted">
-          Tap a role to turn its powers on or off. Create custom roles (like "Elder") with exactly the powers you want.
+          These are server-enforced, not cosmetic — assign a member to one from their name in the Members tab. Mute/kick/ban and answering
+          FAQs are gated by these, separate from the custom roles below.
+        </Text>
+        <View className="gap-3">
+          {group.permissionRoles.map((role) => (
+            <PermissionRoleCard
+              key={role.id}
+              role={role}
+              memberCount={group.members.filter((m) => m.customRoleId === role.id).length}
+              onUpdate={(patch) => g.updatePermissionRole(group.id, role.id, patch)}
+              onDelete={() => g.deletePermissionRole(group.id, role.id)}
+            />
+          ))}
+        </View>
+
+        {creatingPermission ? (
+          <View className="mt-3 rounded-2xl border-2 border-primary bg-surface p-4">
+            <Text className="mb-3 text-sm font-bold text-text">New permission role</Text>
+            <FormField label="Name" value={newPermissionName} onChangeText={(t) => { setNewPermissionName(t); setPermissionError(null); }} placeholder="Moderator" error={permissionError ?? undefined} />
+            <View className="mt-1 flex-row gap-2">
+              <View className="flex-1"><PrimaryButton label="Cancel" variant="outline" onPress={() => { setCreatingPermission(false); setPermissionError(null); }} /></View>
+              <View className="flex-1"><PrimaryButton label="Create" onPress={createPermissionRole} /></View>
+            </View>
+          </View>
+        ) : (
+          <Pressable onPress={() => setCreatingPermission(true)} className="mt-3 flex-row items-center justify-center gap-1.5 rounded-2xl border border-dashed border-border py-3.5 active:opacity-70">
+            <Ionicons name="add-circle-outline" size={18} color={palette.primary} />
+            <Text className="text-sm font-semibold text-primary">Create a permission role</Text>
+          </Pressable>
+        )}
+
+        <Text className="mb-3 mt-8 text-xs font-semibold uppercase tracking-wider text-muted">Custom roles</Text>
+        <Text className="mb-4 text-sm leading-6 text-muted">
+          Tap a role to turn its powers on or off. Create custom roles (like "Elder") with exactly the powers you want. These display/rank
+          powers are separate from the real permissions above.
         </Text>
 
         <View className="gap-3">

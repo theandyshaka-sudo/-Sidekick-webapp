@@ -27,7 +27,9 @@ export default function GroupRequests() {
           <EmptyState icon="checkmark-done-outline" title="No pending requests" subtitle="When someone asks to join, they'll show up here for you to accept or decline." />
         ) : (
           <View className="gap-3">
-            {group.requests.map((r) => (
+            {group.requests.map((r) => {
+              const priorKick = g.kickRecordFor(group, r.userId);
+              return (
               <View key={r.userId} className="rounded-2xl border border-border bg-surface p-4">
                 <View className="flex-row items-center gap-3">
                   <Avatar uri={r.avatarUri} name={r.name} size={44} />
@@ -36,6 +38,14 @@ export default function GroupRequests() {
                     <Text className="text-xs text-muted">Requested {r.requestedAt}</Text>
                   </View>
                 </View>
+                {priorKick ? (
+                  <View className="mt-3 flex-row items-start gap-1.5 rounded-xl border p-2.5" style={{ borderColor: palette.danger + "55", backgroundColor: palette.danger + "11" }}>
+                    <Ionicons name="warning-outline" size={14} color={palette.danger} />
+                    <Text className="flex-1 text-xs leading-5" style={{ color: palette.danger }}>
+                      This person was kicked from this group on {priorKick.kickedAt}{priorKick.reason ? ` for: ${priorKick.reason}` : ""}.
+                    </Text>
+                  </View>
+                ) : null}
                 <View className="mt-3 flex-row gap-2 border-t border-border pt-3">
                   <Pressable onPress={() => g.declineRequest(group.id, r.userId)} className="flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border border-border py-2.5 active:opacity-70">
                     <Ionicons name="close" size={16} color={palette.danger} />
@@ -47,7 +57,8 @@ export default function GroupRequests() {
                   </Pressable>
                 </View>
               </View>
-            ))}
+              );
+            })}
           </View>
         )}
       </ScrollView>

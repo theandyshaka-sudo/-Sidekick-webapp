@@ -8,6 +8,7 @@ import { useMessages } from "../../src/context/MessagesContext";
 import { useGroups } from "../../src/context/GroupsContext";
 import { useRolePalette } from "../../src/theme/useRolePalette";
 import { useThemeVars } from "../../src/theme/useThemeVars";
+import type { Group, GroupMessage } from "../../src/data/groupsMock";
 import type { PlatformReport, ReportReason } from "../../src/data/messagesMock";
 
 const REASON_LABEL: Record<ReportReason, string> = {
@@ -161,16 +162,45 @@ function ReportCard({ report, onViewMessages, onBan }: { report: PlatformReport;
 }
 
 // Flagged group chat messages (auto-flagged by a wordlist check on send — see
-// src/lib/moderateText.ts). Only shows flags from groups this account happens to be a member of,
-// since there's no real backend admin role yet — see the migration's module comment.
+// src/lib/moderateText.ts). Only shows flags the current account can actually see — the sender,
+// the owner, or a can_view_flagged permission-role holder — same rule the group chat screen uses,
+// not every message across every group this account happens to be a member of.
 function FlaggedGroupMessages() {
   const palette = useRolePalette();
   const g = useGroups();
+  const [target, setTarget] = useState<{ group: Group; message: GroupMessage } | null>(null);
+  const [muteFor, setMuteFor] = useState<{ group: Group; message: GroupMessage } | null>(null);
+
   const flagged = g.groups.flatMap((group) =>
-    group.messages.filter((m) => m.flagged && !m.deleted).map((m) => ({ group, message: m }))
+    group.messages.filter((m) => m.flagged && !m.deleted && g.canSeeFlagged(group, m)).map((m) => ({ group, message: m }))
   );
 
   if (flagged.length === 0) return null;
+
+  const MUTE_DURATIONS: Array<{ label: string; hours: number }> = [
+    { label: "3 hours", hours: 3 },
+    { label: "1 day", hours: 24 },
+    { label: "1 week", hours: 168 },
+    { label: "1 month", hours: 720 },
+  ];
+
+  const menuOptions: ActionSheetOption[] = target
+    ? [
+        ...(g.canModerateMessage(target.group, target.message)
+          ? [
+              { label: "Dismiss flag", icon: "flag-outline" as const, onPress: () => g.unflagMessage(target.group.id, target.message.id) },
+              { label: "Delete flagged message", icon: "trash-outline" as const, destructive: true, onPress: () => g.deleteMessage(target.group.id, target.message.id) },
+              { label: "Mute sender", icon: "volume-mute-outline" as const, onPress: () => setMuteFor(target) },
+              { label: "Kick sender", icon: "exit-outline" as const, destructive: true, onPress: () => g.kickMember(target.group.id, target.message.senderId, undefined, target.message.id) },
+              { label: "Ban sender", icon: "ban-outline" as const, destructive: true, onPress: () => g.banMember(target.group.id, target.message.senderId, undefined, target.message.id) },
+            ]
+          : []),
+      ]
+    : [];
+
+  const muteOptions: ActionSheetOption[] = muteFor
+    ? MUTE_DURATIONS.map((d) => ({ label: d.label, onPress: () => g.muteMember(muteFor.group.id, muteFor.message.senderId, d.hours, undefined, muteFor.message.id) }))
+    : [];
 
   return (
     <View className="mb-6">
@@ -179,22 +209,18 @@ function FlaggedGroupMessages() {
       </Text>
       <View className="gap-3">
         {flagged.map(({ group, message }) => (
-          <View key={message.id} className="rounded-2xl border border-border bg-surface p-4">
+          <Pressable key={message.id} onPress={() => setTarget({ group, message })} disabled={!g.canModerateMessage(group, message)} className="rounded-2xl border border-border bg-surface p-4 active:opacity-80">
             <View className="mb-1 flex-row items-center gap-1.5">
               <Ionicons name="flag" size={12} color={palette.danger} />
               <Text className="text-xs font-semibold" style={{ color: palette.danger }}>{group.name}</Text>
               <Text className="text-xs text-muted">· {message.senderName} · {message.time}</Text>
             </View>
             <Text className="text-sm text-text">{message.text}</Text>
-            <View className="mt-3 border-t border-border pt-3">
-              <Pressable onPress={() => g.unflagMessage(group.id, message.id)} className="flex-row items-center justify-center gap-1.5 rounded-xl border border-border py-2 active:opacity-70">
-                <Ionicons name="checkmark-outline" size={14} color={palette.text} />
-                <Text className="text-xs font-semibold text-text">Dismiss flag</Text>
-              </Pressable>
-            </View>
-          </View>
+          </Pressable>
         ))}
       </View>
+      <ActionSheet visible={target != null} title={target?.message.senderName} options={menuOptions} onClose={() => setTarget(null)} />
+      <ActionSheet visible={muteFor != null} title={muteFor ? `Mute ${muteFor.message.senderName} for…` : ""} options={muteOptions} onClose={() => setMuteFor(null)} />
     </View>
   );
 }

@@ -11,7 +11,7 @@ import { useMessages } from "../../../src/context/MessagesContext";
 import { useRolePalette } from "../../../src/theme/useRolePalette";
 import { useThemeVars } from "../../../src/theme/useThemeVars";
 import { formatShortDate, formatTime } from "../../../src/lib/datetime";
-import { roleName, type GroupAnnouncement, type GroupFaq, type GroupMember, type GroupMessage } from "../../../src/data/groupsMock";
+import { displayName, parseRules, roleName, serializeRules, type GroupAnnouncement, type GroupFaq, type GroupMember, type GroupMessage } from "../../../src/data/groupsMock";
 import type { ReportReason } from "../../../src/data/messagesMock";
 
 const REPORT_REASONS: Array<{ reason: ReportReason; label: string }> = [
@@ -87,6 +87,11 @@ function formatMutedUntil(iso: string): string {
   return `${formatShortDate(iso)} at ${formatTime(new Date(iso))}`;
 }
 
+// A mute/kick/ban target — either picked from the Members list (viaMessageId undefined, general
+// power required) or opened from a flagged message (viaMessageId set, lets a can_view_flagged-only
+// role holder act on just that message's sender).
+type ModerationTarget = { userId: string; name: string; realName?: string; viaMessageId?: string };
+
 export default function GroupDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -111,7 +116,10 @@ export default function GroupDetail() {
   const [msgMenu, setMsgMenu] = useState<GroupMessage | null>(null);
   const [memberMenu, setMemberMenu] = useState<GroupMember | null>(null);
   const [roleMenu, setRoleMenu] = useState<GroupMember | null>(null);
-  const [muteMenu, setMuteMenu] = useState<GroupMember | null>(null);
+  const [permissionRoleMenu, setPermissionRoleMenu] = useState<GroupMember | null>(null);
+  const [muteTarget, setMuteTarget] = useState<ModerationTarget | null>(null);
+  const [kickTarget, setKickTarget] = useState<ModerationTarget | null>(null);
+  const [kickReason, setKickReason] = useState("");
   const [reportFor, setReportFor] = useState<{ name: string; kind: "member" | "message" } | null>(null);
 
   const [announceOpen, setAnnounceOpen] = useState(false);
@@ -124,15 +132,27 @@ export default function GroupDetail() {
   const [answerFor, setAnswerFor] = useState<GroupFaq | null>(null);
   const [answerText, setAnswerText] = useState("");
 
+  const [ruleModalOpen, setRuleModalOpen] = useState(false);
+  const [ruleDraft, setRuleDraft] = useState("");
+  const [editingRuleIndex, setEditingRuleIndex] = useState<number | null>(null);
+
   const msgMenuOptions = useMemo((): ActionSheetOption[] => {
     if (!msgMenu || !group) return [];
     const mine = msgMenu.senderId === g.me.userId;
     const isOwner = group.ownerId === g.me.userId;
+    const canModerateFlagged = g.canModerateMessage(group, msgMenu);
+    const canModerateGeneral = isOwner || g.hasRealPower(group, "canKick");
     const opts: ActionSheetOption[] = [];
     if (mine && !msgMenu.imageUrl && !msgMenu.flagged) opts.push({ label: "Edit message", icon: "create-outline", onPress: () => { setEditingId(msgMenu.id); setDraft(msgMenu.text); } });
-    if (msgMenu.flagged && isOwner) opts.push({ label: "Dismiss flag", icon: "flag-outline", onPress: () => g.unflagMessage(group.id, msgMenu.id) });
+    if (msgMenu.flagged && canModerateFlagged) opts.push({ label: "Dismiss flag", icon: "flag-outline", onPress: () => g.unflagMessage(group.id, msgMenu.id) });
     if (!mine) opts.push({ label: "Report message", icon: "flag-outline", destructive: true, onPress: () => setReportFor({ name: msgMenu.senderName, kind: "message" }) });
     if (!msgMenu.flagged) opts.push({ label: mine ? "Delete message" : "Delete (moderator)", icon: "trash-outline", destructive: true, onPress: () => g.deleteMessage(group.id, msgMenu.id) });
+    if (msgMenu.flagged && canModerateFlagged) opts.push({ label: "Delete flagged message", icon: "trash-outline", destructive: true, onPress: () => g.deleteMessage(group.id, msgMenu.id) });
+    if (msgMenu.flagged && (canModerateFlagged || canModerateGeneral) && !mine) {
+      opts.push({ label: "Mute sender", icon: "volume-mute-outline", onPress: () => setMuteTarget({ userId: msgMenu.senderId, name: msgMenu.senderName, viaMessageId: msgMenu.id }) });
+      opts.push({ label: "Kick sender", icon: "exit-outline", destructive: true, onPress: () => setKickTarget({ userId: msgMenu.senderId, name: msgMenu.senderName, viaMessageId: msgMenu.id }) });
+      opts.push({ label: "Ban sender", icon: "ban-outline", destructive: true, onPress: () => g.banMember(group.id, msgMenu.senderId, undefined, msgMenu.id) });
+    }
     return opts;
   }, [msgMenu, group]);
 
@@ -141,19 +161,16 @@ export default function GroupDetail() {
     const opts: ActionSheetOption[] = [];
     const actionable = g.canActOn(group, memberMenu);
     const isOwner = group.ownerId === g.me.userId;
+    const canModerateGeneral = isOwner || g.hasRealPower(group, "canKick");
     if (actionable && g.can(group, "assignRoles") && g.assignableRoles(group).length > 0)
       opts.push({ label: "Change role", icon: "swap-vertical-outline", onPress: () => setRoleMenu(memberMenu) });
     if (actionable && isOwner)
-      opts.push({
-        label: memberMenu.canAnswerFaq ? "Remove FAQ-answer permission" : "Allow answering FAQs",
-        icon: "help-buoy-outline",
-        onPress: () => g.toggleCanAnswerFaq(group.id, memberMenu.userId, !memberMenu.canAnswerFaq),
-      });
-    if (actionable && isOwner)
-      opts.push({ label: "Mute member", icon: "volume-mute-outline", onPress: () => setMuteMenu(memberMenu) });
-    if (actionable && g.can(group, "kick"))
-      opts.push({ label: "Kick from group", icon: "exit-outline", destructive: true, onPress: () => g.kickMember(group.id, memberMenu.userId) });
-    if (actionable && g.can(group, "ban"))
+      opts.push({ label: "Set permission role", icon: "shield-checkmark-outline", onPress: () => setPermissionRoleMenu(memberMenu) });
+    if (actionable && canModerateGeneral)
+      opts.push({ label: "Mute member", icon: "volume-mute-outline", onPress: () => setMuteTarget({ userId: memberMenu.userId, name: memberMenu.name, realName: memberMenu.realName }) });
+    if (actionable && canModerateGeneral)
+      opts.push({ label: "Kick from group", icon: "exit-outline", destructive: true, onPress: () => setKickTarget({ userId: memberMenu.userId, name: memberMenu.name, realName: memberMenu.realName }) });
+    if (actionable && canModerateGeneral)
       opts.push({ label: "Ban from group", icon: "ban-outline", destructive: true, onPress: () => g.banMember(group.id, memberMenu.userId) });
     opts.push({ label: "Message", icon: "chatbubble-outline", onPress: async () => {
       const cid = await ensureConversation(memberMenu.name, memberMenu.avatarUri, `Group: ${group.name}`);
@@ -171,10 +188,28 @@ export default function GroupDetail() {
     }));
   }, [roleMenu, group]);
 
+  const permissionRoleMenuOptions = useMemo((): ActionSheetOption[] => {
+    if (!permissionRoleMenu || !group) return [];
+    const current = permissionRoleMenu.customRoleId;
+    const opts: ActionSheetOption[] = group.permissionRoles.map((r) => ({
+      label: r.name + (current === r.id ? " ✓" : ""),
+      onPress: () => g.assignPermissionRole(group.id, permissionRoleMenu.userId, r.id),
+    }));
+    opts.push({ label: "No permission role" + (!current ? " ✓" : ""), onPress: () => g.assignPermissionRole(group.id, permissionRoleMenu.userId, null) });
+    return opts;
+  }, [permissionRoleMenu, group]);
+
   const muteMenuOptions = useMemo((): ActionSheetOption[] => {
-    if (!muteMenu || !group) return [];
-    return MUTE_DURATIONS.map((d) => ({ label: d.label, onPress: () => g.muteMember(group.id, muteMenu.userId, d.hours) }));
-  }, [muteMenu, group]);
+    if (!muteTarget || !group) return [];
+    return MUTE_DURATIONS.map((d) => ({ label: d.label, onPress: () => { g.muteMember(group.id, muteTarget.userId, d.hours, undefined, muteTarget.viaMessageId); setMuteTarget(null); } }));
+  }, [muteTarget, group]);
+
+  const confirmKick = () => {
+    if (!kickTarget || !group) return;
+    g.kickMember(group.id, kickTarget.userId, kickReason.trim() || undefined, kickTarget.viaMessageId);
+    setKickTarget(null);
+    setKickReason("");
+  };
 
   const reportOptions: ActionSheetOption[] = reportFor && group
     ? REPORT_REASONS.map((r) => ({ label: r.label, onPress: () => fileReport({ reportedName: reportFor.name, reason: r.reason, context: `Group: ${group.name}` }) }))
@@ -202,7 +237,7 @@ export default function GroupDetail() {
   const staff = g.isStaff(group);
   const isOwner = group.ownerId === g.me.userId;
   const myMember = group.members.find((m) => m.userId === g.me.userId);
-  const canAnswerFaqs = isOwner || !!myMember?.canAnswerFaq;
+  const canAnswerFaqs = g.hasRealPower(group, "canAnswerFaq");
   const mutedUntil = myMember?.mutedUntil;
   const isMuted = !!mutedUntil && new Date(mutedUntil).getTime() > Date.now();
   const faqPendingCount = group.faqs.filter((f) => f.answer == null).length;
@@ -243,11 +278,27 @@ export default function GroupDetail() {
     setAnswerText("");
   };
 
+  const ruleItems = parseRules(group.rules);
+  const saveRules = (items: string[]) => g.updateGroup(group.id, { rules: serializeRules(items) });
+  const addRule = () => {
+    if (!ruleDraft.trim()) return;
+    saveRules([...ruleItems, ruleDraft.trim()]);
+    setRuleDraft("");
+    setRuleModalOpen(false);
+  };
+  const saveEditedRule = () => {
+    if (editingRuleIndex == null || !ruleDraft.trim()) return;
+    saveRules(ruleItems.map((r, i) => (i === editingRuleIndex ? ruleDraft.trim() : r)));
+    setEditingRuleIndex(null);
+    setRuleDraft("");
+  };
+  const deleteRule = (index: number) => saveRules(ruleItems.filter((_, i) => i !== index));
+
   const TABS: Array<{ key: Tab; label: string }> = [
     { key: "chat", label: "Chat" },
-    { key: "announcements", label: "Announce" },
-    { key: "faq", label: "FAQ" },
+    { key: "announcements", label: "Announcements" },
     { key: "rules", label: "Rules" },
+    { key: "faq", label: "FAQ" },
     { key: "members", label: "Members" },
   ];
 
@@ -275,17 +326,25 @@ export default function GroupDetail() {
       </View>
 
       {/* Tabs — a compact row of boxes spanning the full width, not a tall scroll strip. */}
-      <View className="flex-row gap-1.5 border-b border-border bg-bg px-3 py-2">
+      <View className="flex-row gap-1 border-b border-border bg-bg px-2 py-1.5">
         {TABS.map((t) => {
           const active = tab === t.key;
           return (
             <Pressable
               key={t.key}
               onPress={() => setTab(t.key)}
-              className="flex-1 items-center justify-center rounded-xl py-2"
+              className="flex-1 items-center justify-center rounded-xl px-0.5 py-1.5"
               style={{ backgroundColor: active ? palette.primary : palette.surface, borderWidth: active ? 0 : 1, borderColor: palette.border }}
             >
-              <Text numberOfLines={1} className="text-[11px] font-semibold" style={{ color: active ? palette.primaryFg : palette.muted }}>{t.label}</Text>
+              <Text
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.7}
+                className="text-[9.5px] font-semibold"
+                style={{ color: active ? palette.primaryFg : palette.muted }}
+              >
+                {t.label}
+              </Text>
               {t.key === "faq" && faqPendingCount > 0 ? (
                 <View className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full" style={{ backgroundColor: palette.danger }} />
               ) : null}
@@ -317,7 +376,7 @@ export default function GroupDetail() {
                   </View>
                 );
               }
-              const canOpen = mine || g.can(group, "deleteMessages") || (!!m.flagged && isOwner);
+              const canOpen = mine || g.can(group, "deleteMessages") || g.canModerateMessage(group, m);
               return (
                 <Pressable
                   key={m.id}
@@ -331,7 +390,7 @@ export default function GroupDetail() {
                     <View className="mb-1 flex-row items-center gap-1">
                       <Ionicons name="flag" size={10} color={mine ? palette.primaryFg : palette.danger} />
                       <Text className={`text-[10px] font-semibold ${mine ? "text-primary-fg/80" : ""}`} style={mine ? undefined : { color: palette.danger }}>
-                        Flagged — only you and the owner can see this
+                        Flagged — only you and staff can see this
                       </Text>
                     </View>
                   ) : null}
@@ -453,18 +512,33 @@ export default function GroupDetail() {
       ) : null}
 
       {tab === "rules" ? (
-        <ScrollView className="flex-1" contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
+        <ScrollView className="flex-1" contentContainerStyle={{ padding: 16, gap: 8 }} showsVerticalScrollIndicator={false}>
           {isOwner ? (
-            <Pressable onPress={() => router.push(`/groups/${group.id}/edit`)} className="mb-3 flex-row items-center justify-center gap-1.5 rounded-2xl border border-border py-2.5 active:opacity-70">
-              <Ionicons name="create-outline" size={14} color={palette.text} />
-              <Text className="text-sm font-semibold text-text">Edit rules</Text>
+            <Pressable onPress={() => { setEditingRuleIndex(null); setRuleDraft(""); setRuleModalOpen(true); }} className="mb-1 flex-row items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-primary py-3 active:opacity-70">
+              <Ionicons name="add-circle-outline" size={16} color={palette.primary} />
+              <Text className="text-sm font-semibold" style={{ color: palette.primary }}>Add a rule</Text>
             </Pressable>
           ) : null}
-          <View className="rounded-2xl border border-border bg-surface p-4">
-            {group.rules.trim() ? (
-              <Text className="text-sm leading-6 text-text">{group.rules}</Text>
+          <View className="rounded-2xl border border-border bg-surface p-2">
+            {ruleItems.length === 0 ? (
+              <Text className="p-3 text-sm text-muted">{isOwner ? "No rules set yet — tap Add a rule to add some." : "This group hasn't posted any rules yet."}</Text>
             ) : (
-              <Text className="text-sm text-muted">{isOwner ? "No rules set yet — tap Edit rules to add some." : "This group hasn't posted any rules yet."}</Text>
+              ruleItems.map((item, i) => (
+                <View key={i} className="flex-row items-start gap-2.5 border-b border-border px-2 py-3 last:border-b-0">
+                  <Text className="mt-0.5 text-sm font-bold" style={{ color: palette.primary }}>{i + 1}.</Text>
+                  <Text className="flex-1 text-sm leading-6 text-text">{item}</Text>
+                  {isOwner ? (
+                    <View className="flex-row items-center gap-3">
+                      <Pressable onPress={() => { setEditingRuleIndex(i); setRuleDraft(item); }} hitSlop={8}>
+                        <Ionicons name="create-outline" size={16} color={palette.muted} />
+                      </Pressable>
+                      <Pressable onPress={() => deleteRule(i)} hitSlop={8}>
+                        <Ionicons name="trash-outline" size={16} color={palette.danger} />
+                      </Pressable>
+                    </View>
+                  ) : null}
+                </View>
+              ))
             )}
           </View>
         </ScrollView>
@@ -578,7 +652,8 @@ export default function GroupDetail() {
       <ActionSheet visible={msgMenu != null} options={msgMenuOptions} onClose={() => setMsgMenu(null)} />
       <ActionSheet visible={memberMenu != null} title={memberMenu?.name} options={memberMenuOptions} onClose={() => setMemberMenu(null)} />
       <ActionSheet visible={roleMenu != null} title={`Set ${roleMenu?.name}'s role`} options={roleMenuOptions} onClose={() => setRoleMenu(null)} />
-      <ActionSheet visible={muteMenu != null} title={muteMenu ? `Mute ${muteMenu.name} for…` : ""} options={muteMenuOptions} onClose={() => setMuteMenu(null)} />
+      <ActionSheet visible={permissionRoleMenu != null} title={permissionRoleMenu ? `${permissionRoleMenu.name}'s permission role` : ""} options={permissionRoleMenuOptions} onClose={() => setPermissionRoleMenu(null)} />
+      <ActionSheet visible={muteTarget != null} title={muteTarget ? `Mute ${muteTarget.name} for…` : ""} options={muteMenuOptions} onClose={() => setMuteTarget(null)} />
       <ActionSheet visible={reportFor != null} title={`Report ${reportFor?.name} for…`} options={reportOptions} onClose={() => setReportFor(null)} />
       <ActionSheet visible={announceMenu != null} options={announceMenuOptions} onClose={() => setAnnounceMenu(null)} />
       <ActionSheet visible={faqMenu != null} options={faqMenuOptions} onClose={() => setFaqMenu(null)} />
@@ -594,6 +669,28 @@ export default function GroupDetail() {
       <ComposeModal visible={answerFor != null} title="Answer this question" submitLabel="Post answer" onSubmit={submitAnswer} onClose={() => setAnswerFor(null)} disabled={!answerText.trim()}>
         {answerFor ? <Text className="mb-2 text-sm font-semibold text-text">{answerFor.question}</Text> : null}
         <ComposeInput value={answerText} onChangeText={setAnswerText} placeholder="Your answer" lines={3} />
+      </ComposeModal>
+
+      <ComposeModal
+        visible={ruleModalOpen || editingRuleIndex != null}
+        title={editingRuleIndex != null ? "Edit rule" : "Add a rule"}
+        submitLabel={editingRuleIndex != null ? "Save" : "Add"}
+        onSubmit={editingRuleIndex != null ? saveEditedRule : addRule}
+        onClose={() => { setRuleModalOpen(false); setEditingRuleIndex(null); setRuleDraft(""); }}
+        disabled={!ruleDraft.trim()}
+      >
+        <ComposeInput value={ruleDraft} onChangeText={setRuleDraft} placeholder="e.g. Be kind to all" lines={2} />
+      </ComposeModal>
+
+      <ComposeModal
+        visible={kickTarget != null}
+        title={kickTarget ? `Kick ${kickTarget.name}?` : ""}
+        submitLabel="Kick"
+        onSubmit={confirmKick}
+        onClose={() => { setKickTarget(null); setKickReason(""); }}
+      >
+        <Text className="mb-2 text-xs text-muted">Optional — they'll be able to see this reason.</Text>
+        <ComposeInput value={kickReason} onChangeText={setKickReason} placeholder="Reason (optional)" lines={2} />
       </ComposeModal>
     </KeyboardAvoidingView>
   );
