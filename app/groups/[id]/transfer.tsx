@@ -92,7 +92,12 @@ export default function TransferOwnership() {
             {otherMembers.map((m) => (
               <Pressable key={m.userId} onPress={() => setTarget(m)} className="flex-row items-center gap-3 rounded-2xl border border-border bg-surface p-3.5 active:opacity-70">
                 <Avatar uri={m.avatarUri} name={m.name} size={40} />
-                <Text className="flex-1 text-sm font-semibold text-text">{m.name}</Text>
+                <View className="flex-1">
+                  <Text className="text-sm font-semibold text-text" numberOfLines={1}>{m.name}</Text>
+                  {m.realName && m.realName !== m.name ? (
+                    <Text className="text-xs text-muted" numberOfLines={1}>{m.realName}</Text>
+                  ) : null}
+                </View>
                 <Ionicons name="chevron-forward" size={16} color={palette.muted} />
               </Pressable>
             ))}

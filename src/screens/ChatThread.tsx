@@ -295,7 +295,7 @@ export function ChatThread() {
             onContentSizeChange={(e) =>
               setInputHeight(Math.min(120, Math.max(40, e.nativeEvent.contentSize.height)))
             }
-            style={{ height: inputHeight, color: palette.text }}
+            style={{ height: inputHeight, color: palette.text, textAlignVertical: "top" }}
             className="flex-1 rounded-2xl border border-border bg-surface px-4 py-2 text-base"
           />
           <Pressable

@@ -50,9 +50,12 @@ export function defaultRoles(): GroupRole[] {
 export type GroupMember = {
   userId: string;
   name: string;
+  realName: string;
   avatarUri: string;
   roleId: string;
   joinedAt: string;
+  canAnswerFaq: boolean;
+  mutedUntil?: string;
 };
 
 export type GroupMessage = {
@@ -81,18 +84,25 @@ export type GroupFaq = {
   authorId: string;
   authorName: string;
   question: string;
-  answer: string;
+  answer: string | null; // null = pending, awaiting an answer
+  flagged?: boolean;
+  answeredById?: string;
+  answeredByName?: string;
+  answeredAt?: string;
   createdAt: string;
 };
 
 export type JoinRequest = {
   userId: string;
   name: string;
+  realName: string;
   avatarUri: string;
   requestedAt: string;
 };
 
 export type GroupLog = { id: string; text: string; at: string };
+
+export type GroupBan = { userId: string; name: string; bannedAt: string };
 
 export type Group = {
   id: string;
@@ -108,8 +118,8 @@ export type Group = {
   announcements: GroupAnnouncement[];
   faqs: GroupFaq[];
   roles: GroupRole[];
-  bans: string[]; // userIds blocked from rejoining
-  logs: GroupLog[]; // audit trail (president/staff only)
+  bans: GroupBan[]; // real — from group_bans
+  logs: GroupLog[]; // audit trail (president/staff only) — still local/mock
   createdAt: string;
 };
 

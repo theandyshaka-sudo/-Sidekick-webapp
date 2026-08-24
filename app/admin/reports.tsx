@@ -186,14 +186,10 @@ function FlaggedGroupMessages() {
               <Text className="text-xs text-muted">· {message.senderName} · {message.time}</Text>
             </View>
             <Text className="text-sm text-text">{message.text}</Text>
-            <View className="mt-3 flex-row gap-2 border-t border-border pt-3">
-              <Pressable onPress={() => g.unflagMessage(group.id, message.id)} className="flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border border-border py-2 active:opacity-70">
+            <View className="mt-3 border-t border-border pt-3">
+              <Pressable onPress={() => g.unflagMessage(group.id, message.id)} className="flex-row items-center justify-center gap-1.5 rounded-xl border border-border py-2 active:opacity-70">
                 <Ionicons name="checkmark-outline" size={14} color={palette.text} />
                 <Text className="text-xs font-semibold text-text">Dismiss flag</Text>
-              </Pressable>
-              <Pressable onPress={() => g.deleteMessage(group.id, message.id)} className="flex-1 flex-row items-center justify-center gap-1.5 rounded-xl py-2 active:opacity-80" style={{ backgroundColor: palette.danger }}>
-                <Ionicons name="trash-outline" size={14} color="#FFFFFF" />
-                <Text className="text-xs font-semibold text-white">Delete</Text>
               </Pressable>
             </View>
           </View>

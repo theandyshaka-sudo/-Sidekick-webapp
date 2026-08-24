@@ -10,6 +10,7 @@ import { useGroups } from "../../../src/context/GroupsContext";
 import { useMessages } from "../../../src/context/MessagesContext";
 import { useRolePalette } from "../../../src/theme/useRolePalette";
 import { useThemeVars } from "../../../src/theme/useThemeVars";
+import { formatShortDate, formatTime } from "../../../src/lib/datetime";
 import { roleName, type GroupAnnouncement, type GroupFaq, type GroupMember, type GroupMessage } from "../../../src/data/groupsMock";
 import type { ReportReason } from "../../../src/data/messagesMock";
 
@@ -21,9 +22,20 @@ const REPORT_REASONS: Array<{ reason: ReportReason; label: string }> = [
   { reason: "other", label: "Something else" },
 ];
 
+const MUTE_DURATIONS: Array<{ label: string; hours: number }> = [
+  { label: "3 hours", hours: 3 },
+  { label: "1 day", hours: 24 },
+  { label: "1 week", hours: 168 },
+  { label: "1 month", hours: 720 },
+];
+
+// 1 line to 5 lines, then the box stops growing and scrolls internally.
+const COMPOSER_MIN_HEIGHT = 40;
+const COMPOSER_MAX_HEIGHT = 120;
+
 type Tab = "chat" | "announcements" | "faq" | "rules" | "members";
 
-// Small themed bottom-sheet form, used for posting an announcement or a FAQ entry.
+// Small themed bottom-sheet form, used for posting an announcement, asking/answering a FAQ.
 function ComposeModal({ visible, title, children, onSubmit, onClose, submitLabel = "Post", disabled }: {
   visible: boolean;
   title: string;
@@ -71,6 +83,10 @@ function ComposeInput({ value, onChangeText, placeholder, lines = 3 }: { value: 
   );
 }
 
+function formatMutedUntil(iso: string): string {
+  return `${formatShortDate(iso)} at ${formatTime(new Date(iso))}`;
+}
+
 export default function GroupDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -88,12 +104,14 @@ export default function GroupDetail() {
 
   const [tab, setTab] = useState<Tab>("chat");
   const [draft, setDraft] = useState("");
+  const [composerHeight, setComposerHeight] = useState(COMPOSER_MIN_HEIGHT);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [sendingPhoto, setSendingPhoto] = useState(false);
   const [photoMenuOpen, setPhotoMenuOpen] = useState(false);
   const [msgMenu, setMsgMenu] = useState<GroupMessage | null>(null);
   const [memberMenu, setMemberMenu] = useState<GroupMember | null>(null);
   const [roleMenu, setRoleMenu] = useState<GroupMember | null>(null);
+  const [muteMenu, setMuteMenu] = useState<GroupMember | null>(null);
   const [reportFor, setReportFor] = useState<{ name: string; kind: "member" | "message" } | null>(null);
 
   const [announceOpen, setAnnounceOpen] = useState(false);
@@ -102,18 +120,19 @@ export default function GroupDetail() {
 
   const [faqOpen, setFaqOpen] = useState(false);
   const [faqQuestion, setFaqQuestion] = useState("");
-  const [faqAnswer, setFaqAnswer] = useState("");
   const [faqMenu, setFaqMenu] = useState<GroupFaq | null>(null);
+  const [answerFor, setAnswerFor] = useState<GroupFaq | null>(null);
+  const [answerText, setAnswerText] = useState("");
 
   const msgMenuOptions = useMemo((): ActionSheetOption[] => {
     if (!msgMenu || !group) return [];
     const mine = msgMenu.senderId === g.me.userId;
     const isOwner = group.ownerId === g.me.userId;
     const opts: ActionSheetOption[] = [];
-    if (mine && !msgMenu.imageUrl) opts.push({ label: "Edit message", icon: "create-outline", onPress: () => { setEditingId(msgMenu.id); setDraft(msgMenu.text); } });
+    if (mine && !msgMenu.imageUrl && !msgMenu.flagged) opts.push({ label: "Edit message", icon: "create-outline", onPress: () => { setEditingId(msgMenu.id); setDraft(msgMenu.text); } });
     if (msgMenu.flagged && isOwner) opts.push({ label: "Dismiss flag", icon: "flag-outline", onPress: () => g.unflagMessage(group.id, msgMenu.id) });
     if (!mine) opts.push({ label: "Report message", icon: "flag-outline", destructive: true, onPress: () => setReportFor({ name: msgMenu.senderName, kind: "message" }) });
-    opts.push({ label: mine ? "Delete message" : "Delete (moderator)", icon: "trash-outline", destructive: true, onPress: () => g.deleteMessage(group.id, msgMenu.id) });
+    if (!msgMenu.flagged) opts.push({ label: mine ? "Delete message" : "Delete (moderator)", icon: "trash-outline", destructive: true, onPress: () => g.deleteMessage(group.id, msgMenu.id) });
     return opts;
   }, [msgMenu, group]);
 
@@ -121,8 +140,17 @@ export default function GroupDetail() {
     if (!memberMenu || !group) return [];
     const opts: ActionSheetOption[] = [];
     const actionable = g.canActOn(group, memberMenu);
+    const isOwner = group.ownerId === g.me.userId;
     if (actionable && g.can(group, "assignRoles") && g.assignableRoles(group).length > 0)
       opts.push({ label: "Change role", icon: "swap-vertical-outline", onPress: () => setRoleMenu(memberMenu) });
+    if (actionable && isOwner)
+      opts.push({
+        label: memberMenu.canAnswerFaq ? "Remove FAQ-answer permission" : "Allow answering FAQs",
+        icon: "help-buoy-outline",
+        onPress: () => g.toggleCanAnswerFaq(group.id, memberMenu.userId, !memberMenu.canAnswerFaq),
+      });
+    if (actionable && isOwner)
+      opts.push({ label: "Mute member", icon: "volume-mute-outline", onPress: () => setMuteMenu(memberMenu) });
     if (actionable && g.can(group, "kick"))
       opts.push({ label: "Kick from group", icon: "exit-outline", destructive: true, onPress: () => g.kickMember(group.id, memberMenu.userId) });
     if (actionable && g.can(group, "ban"))
@@ -143,6 +171,11 @@ export default function GroupDetail() {
     }));
   }, [roleMenu, group]);
 
+  const muteMenuOptions = useMemo((): ActionSheetOption[] => {
+    if (!muteMenu || !group) return [];
+    return MUTE_DURATIONS.map((d) => ({ label: d.label, onPress: () => g.muteMember(group.id, muteMenu.userId, d.hours) }));
+  }, [muteMenu, group]);
+
   const reportOptions: ActionSheetOption[] = reportFor && group
     ? REPORT_REASONS.map((r) => ({ label: r.label, onPress: () => fileReport({ reportedName: reportFor.name, reason: r.reason, context: `Group: ${group.name}` }) }))
     : [];
@@ -152,7 +185,7 @@ export default function GroupDetail() {
     : [];
 
   const faqMenuOptions: ActionSheetOption[] = faqMenu && group
-    ? [{ label: "Delete entry", icon: "trash-outline", destructive: true, onPress: () => g.deleteFaq(group.id, faqMenu.id) }]
+    ? [{ label: faqMenu.answer == null ? "Retract question" : "Delete entry", icon: "trash-outline", destructive: true, onPress: () => g.deleteFaq(group.id, faqMenu.id) }]
     : [];
 
   if (!group) {
@@ -168,6 +201,11 @@ export default function GroupDetail() {
   const banned = g.isBanned(group);
   const staff = g.isStaff(group);
   const isOwner = group.ownerId === g.me.userId;
+  const myMember = group.members.find((m) => m.userId === g.me.userId);
+  const canAnswerFaqs = isOwner || !!myMember?.canAnswerFaq;
+  const mutedUntil = myMember?.mutedUntil;
+  const isMuted = !!mutedUntil && new Date(mutedUntil).getTime() > Date.now();
+  const faqPendingCount = group.faqs.filter((f) => f.answer == null).length;
   const pendingDot = staff && g.can(group, "acceptRequests") && group.requests.length > 0;
 
   const send = () => {
@@ -175,6 +213,7 @@ export default function GroupDetail() {
     if (editingId) { g.editMessage(group.id, editingId, draft.trim()); setEditingId(null); }
     else g.sendMessage(group.id, draft.trim());
     setDraft("");
+    setComposerHeight(COMPOSER_MIN_HEIGHT);
   };
 
   const sendPhoto = async (source: "camera" | "library") => {
@@ -190,20 +229,26 @@ export default function GroupDetail() {
     setAnnounceOpen(false);
   };
 
-  const postFaq = () => {
-    if (!faqQuestion.trim() || !faqAnswer.trim()) return;
-    g.postFaq(group.id, faqQuestion.trim(), faqAnswer.trim());
+  const askFaq = () => {
+    if (!faqQuestion.trim()) return;
+    g.askFaq(group.id, faqQuestion.trim());
     setFaqQuestion("");
-    setFaqAnswer("");
     setFaqOpen(false);
+  };
+
+  const submitAnswer = () => {
+    if (!answerFor || !answerText.trim()) return;
+    g.answerFaq(group.id, answerFor.id, answerText.trim());
+    setAnswerFor(null);
+    setAnswerText("");
   };
 
   const TABS: Array<{ key: Tab; label: string }> = [
     { key: "chat", label: "Chat" },
-    { key: "announcements", label: "Announcements" },
+    { key: "announcements", label: "Announce" },
     { key: "faq", label: "FAQ" },
     { key: "rules", label: "Rules" },
-    { key: "members", label: `Members (${group.members.length})` },
+    { key: "members", label: "Members" },
   ];
 
   return (
@@ -229,17 +274,25 @@ export default function GroupDetail() {
         ) : null}
       </View>
 
-      {/* Tabs */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} className="border-b border-border bg-bg" contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8 }}>
+      {/* Tabs — a compact row of boxes spanning the full width, not a tall scroll strip. */}
+      <View className="flex-row gap-1.5 border-b border-border bg-bg px-3 py-2">
         {TABS.map((t) => {
           const active = tab === t.key;
           return (
-            <Pressable key={t.key} onPress={() => setTab(t.key)} className="mr-4 pb-1" style={{ borderBottomWidth: 2, borderBottomColor: active ? palette.primary : "transparent" }}>
-              <Text className="text-sm font-semibold" style={{ color: active ? palette.primary : palette.muted }}>{t.label}</Text>
+            <Pressable
+              key={t.key}
+              onPress={() => setTab(t.key)}
+              className="flex-1 items-center justify-center rounded-xl py-2"
+              style={{ backgroundColor: active ? palette.primary : palette.surface, borderWidth: active ? 0 : 1, borderColor: palette.border }}
+            >
+              <Text numberOfLines={1} className="text-[11px] font-semibold" style={{ color: active ? palette.primaryFg : palette.muted }}>{t.label}</Text>
+              {t.key === "faq" && faqPendingCount > 0 ? (
+                <View className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full" style={{ backgroundColor: palette.danger }} />
+              ) : null}
             </Pressable>
           );
         })}
-      </ScrollView>
+      </View>
 
       {tab === "chat" ? (
         member ? (
@@ -344,10 +397,38 @@ export default function GroupDetail() {
           <ScrollView className="flex-1" contentContainerStyle={{ padding: 16, gap: 10 }} showsVerticalScrollIndicator={false}>
             <Pressable onPress={() => setFaqOpen(true)} className="flex-row items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-primary py-3 active:opacity-70">
               <Ionicons name="help-circle-outline" size={16} color={palette.primary} />
-              <Text className="text-sm font-semibold" style={{ color: palette.primary }}>Add a common question</Text>
+              <Text className="text-sm font-semibold" style={{ color: palette.primary }}>Ask a question</Text>
             </Pressable>
             {group.faqs.map((f) => {
-              const canDelete = isOwner || f.authorId === g.me.userId;
+              const pending = f.answer == null;
+              const canDelete = isOwner || f.authorId === g.me.userId || canAnswerFaqs;
+              if (pending) {
+                return (
+                  <Pressable
+                    key={f.id}
+                    disabled={!canDelete}
+                    onLongPress={() => canDelete && setFaqMenu(f)}
+                    className="rounded-2xl border border-dashed border-border bg-surface p-4"
+                    style={{ opacity: 0.65 }}
+                  >
+                    <View className="mb-1 flex-row items-center gap-1.5">
+                      {f.flagged ? <Ionicons name="flag" size={11} color={palette.danger} /> : null}
+                      <Text className="text-[10px] font-bold uppercase tracking-wider" style={{ color: palette.muted }}>Awaiting response</Text>
+                    </View>
+                    <Text className="text-sm font-bold text-text">{f.question}</Text>
+                    <Text className="mt-2 text-[11px] text-muted">{f.authorName} · {f.createdAt}</Text>
+                    {canAnswerFaqs ? (
+                      <Pressable
+                        onPress={() => { setAnswerFor(f); setAnswerText(""); }}
+                        className="mt-3 flex-row items-center justify-center gap-1.5 rounded-xl border border-primary py-2 active:opacity-70"
+                      >
+                        <Ionicons name="chatbox-ellipses-outline" size={13} color={palette.primary} />
+                        <Text className="text-xs font-semibold" style={{ color: palette.primary }}>Answer</Text>
+                      </Pressable>
+                    ) : null}
+                  </Pressable>
+                );
+              }
               return (
                 <Pressable
                   key={f.id}
@@ -357,11 +438,11 @@ export default function GroupDetail() {
                 >
                   <Text className="text-sm font-bold text-text">{f.question}</Text>
                   <Text className="mt-1 text-sm leading-6 text-muted">{f.answer}</Text>
-                  <Text className="mt-2 text-[11px] text-muted">{f.authorName} · {f.createdAt}</Text>
+                  <Text className="mt-2 text-[11px] text-muted">Answered by {f.answeredByName ?? "a member"} · {f.answeredAt}</Text>
                 </Pressable>
               );
             })}
-            {group.faqs.length === 0 ? <Text className="mt-6 text-center text-sm text-muted">No common questions yet — add the first one.</Text> : null}
+            {group.faqs.length === 0 ? <Text className="mt-6 text-center text-sm text-muted">No common questions yet — ask the first one.</Text> : null}
           </ScrollView>
         ) : (
           <View className="flex-1 items-center justify-center px-10">
@@ -419,38 +500,48 @@ export default function GroupDetail() {
       {/* Bottom bar */}
       {member ? (
         tab === "chat" ? (
-          <View className="border-t border-border bg-bg px-4 pt-3" style={{ paddingBottom: insets.bottom + 12 }}>
-            {editingId ? (
-              <View className="mb-1 flex-row items-center justify-between">
-                <View className="flex-row items-center gap-1.5"><Ionicons name="create-outline" size={12} color={palette.primary} /><Text className="text-xs" style={{ color: palette.primary }}>Editing message</Text></View>
-                <Pressable onPress={() => { setEditingId(null); setDraft(""); }} hitSlop={6}><Text className="text-xs text-muted">Cancel</Text></Pressable>
-              </View>
-            ) : null}
-            <View className="flex-row items-end gap-2">
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Send a photo"
-                onPress={() => setPhotoMenuOpen(true)}
-                disabled={sendingPhoto || !!editingId}
-                className="h-11 w-11 items-center justify-center rounded-full border border-border bg-surface active:opacity-70"
-                style={{ opacity: sendingPhoto || editingId ? 0.5 : 1 }}
-              >
-                <Ionicons name="camera-outline" size={19} color={palette.text} />
-              </Pressable>
-              <TextInput
-                value={draft}
-                onChangeText={setDraft}
-                placeholder={`Message ${group.name}`}
-                placeholderTextColor={palette.muted}
-                multiline
-                style={{ color: palette.text, minHeight: 40, maxHeight: 120 }}
-                className="flex-1 rounded-2xl border border-border bg-surface px-4 py-2.5 text-base"
-              />
-              <Pressable accessibilityRole="button" accessibilityLabel="Send message" onPress={send} disabled={!draft.trim()} className="h-11 w-11 items-center justify-center rounded-full bg-primary active:opacity-80" style={{ opacity: draft.trim() ? 1 : 0.5 }}>
-                <Ionicons name={editingId ? "checkmark" : "arrow-up"} size={20} color={palette.primaryFg} />
-              </Pressable>
+          isMuted && mutedUntil ? (
+            <View className="flex-row items-center justify-center gap-2 border-t border-border bg-surface px-4" style={{ paddingBottom: insets.bottom + 14, paddingTop: 14 }}>
+              <Ionicons name="mic-off" size={14} color={palette.danger} />
+              <Text className="text-sm text-muted">You're muted until {formatMutedUntil(mutedUntil)}</Text>
             </View>
-          </View>
+          ) : (
+            <View className="border-t border-border bg-bg px-4 pt-3" style={{ paddingBottom: insets.bottom + 12 }}>
+              {editingId ? (
+                <View className="mb-1 flex-row items-center justify-between">
+                  <View className="flex-row items-center gap-1.5"><Ionicons name="create-outline" size={12} color={palette.primary} /><Text className="text-xs" style={{ color: palette.primary }}>Editing message</Text></View>
+                  <Pressable onPress={() => { setEditingId(null); setDraft(""); setComposerHeight(COMPOSER_MIN_HEIGHT); }} hitSlop={6}><Text className="text-xs text-muted">Cancel</Text></Pressable>
+                </View>
+              ) : null}
+              <View className="flex-row items-end gap-2">
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Send a photo"
+                  onPress={() => setPhotoMenuOpen(true)}
+                  disabled={sendingPhoto || !!editingId}
+                  className="h-11 w-11 items-center justify-center rounded-full border border-border bg-surface active:opacity-70"
+                  style={{ opacity: sendingPhoto || editingId ? 0.5 : 1 }}
+                >
+                  <Ionicons name="camera-outline" size={19} color={palette.text} />
+                </Pressable>
+                <TextInput
+                  value={draft}
+                  onChangeText={setDraft}
+                  placeholder={`Message ${group.name}`}
+                  placeholderTextColor={palette.muted}
+                  multiline
+                  onContentSizeChange={(e) =>
+                    setComposerHeight(Math.min(COMPOSER_MAX_HEIGHT, Math.max(COMPOSER_MIN_HEIGHT, e.nativeEvent.contentSize.height)))
+                  }
+                  style={{ height: composerHeight, color: palette.text, textAlignVertical: "top" }}
+                  className="flex-1 rounded-2xl border border-border bg-surface px-4 py-2.5 text-base"
+                />
+                <Pressable accessibilityRole="button" accessibilityLabel="Send message" onPress={send} disabled={!draft.trim()} className="h-11 w-11 items-center justify-center rounded-full bg-primary active:opacity-80" style={{ opacity: draft.trim() ? 1 : 0.5 }}>
+                  <Ionicons name={editingId ? "checkmark" : "arrow-up"} size={20} color={palette.primaryFg} />
+                </Pressable>
+              </View>
+            </View>
+          )
         ) : null
       ) : (
         <View className="border-t border-border bg-bg px-4 pt-3" style={{ paddingBottom: insets.bottom + 12 }}>
@@ -487,6 +578,7 @@ export default function GroupDetail() {
       <ActionSheet visible={msgMenu != null} options={msgMenuOptions} onClose={() => setMsgMenu(null)} />
       <ActionSheet visible={memberMenu != null} title={memberMenu?.name} options={memberMenuOptions} onClose={() => setMemberMenu(null)} />
       <ActionSheet visible={roleMenu != null} title={`Set ${roleMenu?.name}'s role`} options={roleMenuOptions} onClose={() => setRoleMenu(null)} />
+      <ActionSheet visible={muteMenu != null} title={muteMenu ? `Mute ${muteMenu.name} for…` : ""} options={muteMenuOptions} onClose={() => setMuteMenu(null)} />
       <ActionSheet visible={reportFor != null} title={`Report ${reportFor?.name} for…`} options={reportOptions} onClose={() => setReportFor(null)} />
       <ActionSheet visible={announceMenu != null} options={announceMenuOptions} onClose={() => setAnnounceMenu(null)} />
       <ActionSheet visible={faqMenu != null} options={faqMenuOptions} onClose={() => setFaqMenu(null)} />
@@ -495,9 +587,13 @@ export default function GroupDetail() {
         <ComposeInput value={announceText} onChangeText={setAnnounceText} placeholder="What's the announcement?" lines={4} />
       </ComposeModal>
 
-      <ComposeModal visible={faqOpen} title="Add a common question" onSubmit={postFaq} onClose={() => setFaqOpen(false)} disabled={!faqQuestion.trim() || !faqAnswer.trim()}>
-        <ComposeInput value={faqQuestion} onChangeText={setFaqQuestion} placeholder="e.g. What's the best brand to use?" lines={2} />
-        <ComposeInput value={faqAnswer} onChangeText={setFaqAnswer} placeholder="Your answer" lines={3} />
+      <ComposeModal visible={faqOpen} title="Ask a question" onSubmit={askFaq} onClose={() => setFaqOpen(false)} disabled={!faqQuestion.trim()}>
+        <ComposeInput value={faqQuestion} onChangeText={setFaqQuestion} placeholder="e.g. What's the best brand to use?" lines={3} />
+      </ComposeModal>
+
+      <ComposeModal visible={answerFor != null} title="Answer this question" submitLabel="Post answer" onSubmit={submitAnswer} onClose={() => setAnswerFor(null)} disabled={!answerText.trim()}>
+        {answerFor ? <Text className="mb-2 text-sm font-semibold text-text">{answerFor.question}</Text> : null}
+        <ComposeInput value={answerText} onChangeText={setAnswerText} placeholder="Your answer" lines={3} />
       </ComposeModal>
     </KeyboardAvoidingView>
   );

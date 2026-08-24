@@ -93,6 +93,15 @@ export default function GroupSettings() {
           </View>
         ) : null}
 
+        {group.ownerId === g.me.userId ? (
+          <>
+            <Text className="mb-3 mt-7 text-xs font-semibold uppercase tracking-wider text-muted">Moderation</Text>
+            <View className="gap-2.5">
+              <Row icon="ban-outline" label="Banned members" sub={`${group.bans.length} banned`} onPress={() => router.push(`/groups/${group.id}/banned`)} />
+            </View>
+          </>
+        ) : null}
+
         {group.ownerId === g.me.userId && group.members.length > 1 ? (
           <>
             <Text className="mb-3 mt-7 text-xs font-semibold uppercase tracking-wider text-muted">Ownership</Text>
