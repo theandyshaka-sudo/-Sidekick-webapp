@@ -23,11 +23,14 @@ const REAL_TOGGLES: Array<{ key: keyof RealPatch; label: string; desc: string; i
   { key: "canDeleteMessages", label: "Delete messages", desc: "Remove anyone's messages", icon: "trash-outline" },
   { key: "canAssignRoles", label: "Promote & demote", desc: "Change other members' roles", icon: "swap-vertical-outline" },
   { key: "canManageRoles", label: "Manage roles", desc: "Create, edit & delete roles and their powers", icon: "ribbon-outline" },
+  { key: "canPostAnnouncements", label: "Post announcements", desc: "Broadcast posts to every member, and delete any announcement", icon: "megaphone-outline" },
+  { key: "canEditRules", label: "Edit rules", desc: "Add, edit & delete the group's rules", icon: "list-outline" },
 ];
 
 const NO_REAL_POWERS: RealPatch = {
   canKick: false, canAnswerFaq: false, canViewFlagged: false,
   canAcceptRequests: false, canEditGroup: false, canDeleteMessages: false, canAssignRoles: false, canManageRoles: false,
+  canPostAnnouncements: false, canEditRules: false,
 };
 
 // One role = one card, every real switch it has, shown together.
@@ -145,6 +148,7 @@ export default function GroupRoles() {
               canKick: found.canKick, canAnswerFaq: found.canAnswerFaq, canViewFlagged: found.canViewFlagged,
               canAcceptRequests: found.canAcceptRequests, canEditGroup: found.canEditGroup, canDeleteMessages: found.canDeleteMessages,
               canAssignRoles: found.canAssignRoles, canManageRoles: found.canManageRoles,
+              canPostAnnouncements: found.canPostAnnouncements, canEditRules: found.canEditRules,
             } : null;
             return (
               <RoleCard

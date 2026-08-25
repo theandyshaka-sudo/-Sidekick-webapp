@@ -147,7 +147,8 @@ export default function GroupDetail() {
     if (!mine) opts.push({ label: "Report message", icon: "flag-outline", destructive: true, onPress: () => setReportFor({ name: msgMenu.senderName, kind: "message" }) });
     if (!msgMenu.flagged) opts.push({ label: mine ? "Delete message" : "Delete (moderator)", icon: "trash-outline", destructive: true, onPress: () => g.deleteMessage(group.id, msgMenu.id) });
     if (msgMenu.flagged && canModerateFlagged) opts.push({ label: "Delete flagged message", icon: "trash-outline", destructive: true, onPress: () => g.deleteMessage(group.id, msgMenu.id) });
-    if (msgMenu.flagged && (canModerateFlagged || canModerateGeneral) && !mine) {
+    const senderIsOwner = msgMenu.senderId === group.ownerId;
+    if (msgMenu.flagged && (canModerateFlagged || canModerateGeneral) && !mine && !senderIsOwner) {
       opts.push({ label: "Mute sender", icon: "volume-mute-outline", onPress: () => setMuteTarget({ userId: msgMenu.senderId, name: msgMenu.senderName, viaMessageId: msgMenu.id }) });
       opts.push({ label: "Kick sender", icon: "exit-outline", destructive: true, onPress: () => setKickTarget({ userId: msgMenu.senderId, name: msgMenu.senderName, viaMessageId: msgMenu.id }) });
       opts.push({ label: "Ban sender", icon: "ban-outline", destructive: true, onPress: () => g.banMember(group.id, msgMenu.senderId, undefined, msgMenu.id) });
@@ -224,6 +225,8 @@ export default function GroupDetail() {
   const isOwner = group.ownerId === g.me.userId;
   const myMember = group.members.find((m) => m.userId === g.me.userId);
   const canAnswerFaqs = g.hasRealPower(group, "canAnswerFaq");
+  const canPostAnnouncements = g.hasRealPower(group, "canPostAnnouncements");
+  const canEditRules = g.hasRealPower(group, "canEditRules");
   const mutedUntil = myMember?.mutedUntil;
   const isMuted = !!mutedUntil && new Date(mutedUntil).getTime() > Date.now();
   const faqPendingCount = group.faqs.filter((f) => f.answer == null).length;
@@ -362,7 +365,7 @@ export default function GroupDetail() {
                   </View>
                 );
               }
-              const canOpen = mine || g.hasRealPower(group, "canDeleteMessages") || g.canModerateMessage(group, m);
+              const canOpen = (mine && !m.flagged) || g.hasRealPower(group, "canDeleteMessages") || g.canModerateMessage(group, m);
               return (
                 <Pressable
                   key={m.id}
@@ -406,7 +409,7 @@ export default function GroupDetail() {
       {tab === "announcements" ? (
         member ? (
           <ScrollView className="flex-1" contentContainerStyle={{ padding: 16, gap: 10 }} showsVerticalScrollIndicator={false}>
-            {isOwner ? (
+            {canPostAnnouncements ? (
               <Pressable onPress={() => setAnnounceOpen(true)} className="flex-row items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-primary py-3 active:opacity-70">
                 <Ionicons name="megaphone-outline" size={16} color={palette.primary} />
                 <Text className="text-sm font-semibold" style={{ color: palette.primary }}>Post an announcement</Text>
@@ -415,8 +418,8 @@ export default function GroupDetail() {
             {group.announcements.map((a) => (
               <Pressable
                 key={a.id}
-                disabled={!isOwner}
-                onLongPress={() => isOwner && setAnnounceMenu(a)}
+                disabled={!canPostAnnouncements}
+                onLongPress={() => canPostAnnouncements && setAnnounceMenu(a)}
                 className="rounded-2xl border border-border bg-surface p-4"
               >
                 <View className="mb-1 flex-row items-center gap-1.5">
@@ -502,7 +505,7 @@ export default function GroupDetail() {
 
       {tab === "rules" ? (
         <ScrollView className="flex-1" contentContainerStyle={{ padding: 16, gap: 8 }} showsVerticalScrollIndicator={false}>
-          {isOwner ? (
+          {canEditRules ? (
             <Pressable onPress={() => { setEditingRuleIndex(null); setRuleDraft(""); setRuleModalOpen(true); }} className="mb-1 flex-row items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-primary py-3 active:opacity-70">
               <Ionicons name="add-circle-outline" size={16} color={palette.primary} />
               <Text className="text-sm font-semibold" style={{ color: palette.primary }}>Add a rule</Text>
@@ -510,13 +513,13 @@ export default function GroupDetail() {
           ) : null}
           <View className="rounded-2xl border border-border bg-surface p-2">
             {ruleItems.length === 0 ? (
-              <Text className="p-3 text-sm text-muted">{isOwner ? "No rules set yet — tap Add a rule to add some." : "This group hasn't posted any rules yet."}</Text>
+              <Text className="p-3 text-sm text-muted">{canEditRules ? "No rules set yet — tap Add a rule to add some." : "This group hasn't posted any rules yet."}</Text>
             ) : (
               ruleItems.map((item, i) => (
                 <View key={i} className="flex-row items-start gap-2.5 border-b border-border px-2 py-3 last:border-b-0">
                   <Text className="mt-0.5 text-sm font-bold" style={{ color: palette.primary }}>{i + 1}.</Text>
                   <Text className="flex-1 text-sm leading-6 text-text">{item}</Text>
-                  {isOwner ? (
+                  {canEditRules ? (
                     <View className="flex-row items-center gap-3">
                       <Pressable onPress={() => { setEditingRuleIndex(i); setRuleDraft(item); }} hitSlop={8}>
                         <Ionicons name="create-outline" size={16} color={palette.muted} />

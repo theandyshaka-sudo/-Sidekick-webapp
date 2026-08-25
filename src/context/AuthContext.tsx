@@ -62,6 +62,9 @@ type AuthState = {
   updateUsername: (username: string) => Promise<AuthResult>;
   updateEmail: (email: string) => Promise<AuthResult>;
   updatePassword: (password: string) => Promise<AuthResult>;
+  // Re-checks the current account's password without changing what's signed in — used to gate
+  // irreversible actions (e.g. deleting a group) behind re-entering your password.
+  verifyPassword: (password: string) => Promise<boolean>;
   setTwoFactor: (enabled: boolean) => Promise<void>;
   requestPasswordReset: (email: string) => Promise<void>;
   // Called once the emailed one-time code checks out — this is what actually lets a 2FA-gated
@@ -377,6 +380,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { ok: true };
   };
 
+  // Re-runs signInWithPassword for the already-signed-in account's own email — succeeds only if
+  // the password is correct. Refreshes the session tokens as a side effect (same account, so
+  // harmless) but doesn't change currentUser or anything else the app cares about.
+  const verifyPassword = async (password: string): Promise<boolean> => {
+    if (!currentUser?.email) return false;
+    const { error } = await supabase.auth.signInWithPassword({ email: currentUser.email, password });
+    return !error;
+  };
+
   const setTwoFactor = async (enabled: boolean) => {
     await updateAccount({ twoFactorEnabled: enabled });
   };
@@ -404,6 +416,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateUsername,
         updateEmail,
         updatePassword,
+        verifyPassword,
         setTwoFactor,
         requestPasswordReset,
         completeTwoFactorLogin,

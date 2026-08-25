@@ -1,5 +1,67 @@
 @AGENTS.md
 
+## Session notes — where we left off (2026-08-25, even later same day)
+
+**⚠️ NEXT STEP — run `20260825160000_group_deletion_and_moderation_fixes.sql`** (after the two
+migrations from the entry below it, if not already run). Nothing in this entry has been tested yet.
+
+While testing the previous batch, the user found 6 duplicate groups from repeatedly retrying
+"Create group" during the recursion-bug window (the RPC itself was fine each time — only the
+subsequent group *load* was breaking — so every retry actually created a real group). They left
+the 5 extras rather than deleting them, since there was no delete-group feature yet. **Recommended
+cleanup path: use the new in-app "Delete group" button (Settings → Ownership, owner-only) on each
+of the 5 duplicates** rather than raw SQL — safer than guessing which row to keep from outside the
+app, and doubles as a real-world test of the new feature.
+
+### What changed, from user feedback after testing the role-permissions batch
+
+1. **Two more real role permissions**: `canPostAnnouncements` (post + delete any announcement) and
+   `canEditRules` (add/edit/delete rules). Same `group_roles` pattern as everything else. Rules
+   editing is a second way into the `groups` UPDATE policy (alongside `canEditGroup`) — the client
+   (`updateGroup()` in `GroupsContext.tsx`) only lets a `canEditRules`-only holder through when the
+   patch touches *only* `rules`, nothing else, since the RLS policy itself is row-level.
+
+2. **Owner protection — nobody outranks the owner, ever, even via a real permission:**
+   - `group_can_moderate()` now returns `false` immediately if the *target* is the group owner —
+     closes a real gap where a `can_kick` or `can_view_flagged` holder could previously mute/kick/
+     ban the actual owner. Covers `kick_group_member`/`mute_group_member`/`ban_group_member`
+     automatically since all three route through this one function.
+   - The group_messages update policy now blocks a message's own sender from touching it at all
+     once it's flagged — including the owner acting on their *own* flagged message. Before this,
+     the owner-as-sender could still dismiss (though not hard-delete) their own flagged message via
+     a raw API call, even though the UI already hid that option — this closes the DB-level gap so
+     "only someone else with the right permission can act on it" is actually enforced, not just
+     hidden client-side. `app/groups/[id]/index.tsx` also hides the message long-press menu
+     entirely for a non-privileged sender's own flagged message (still opens for the owner, since
+     they always pass `canDeleteMessages` — but the options list inside is correctly empty either
+     way, just a minor cosmetic rough edge, not a security gap).
+   - Client-side: `msgMenuOptions` in `index.tsx` no longer offers Mute/Kick/Ban on a flagged
+     message whose sender is the group owner, regardless of who's viewing it.
+
+3. **Real "Delete group"** (owner-only, irreversible): `groups` gets a DELETE RLS policy
+   (owner-only), cascading through every existing FK (members, messages, announcements, rules live
+   on the `groups` row itself, FAQs, roles, bans, kicks, moderation log — all gone). New
+   `AuthContext.verifyPassword()` re-runs `signInWithPassword` for the current account to confirm
+   the typed password without changing the session, gating the new
+   `app/groups/[id]/delete-group.tsx` confirmation screen (warning text + password field, no
+   type-the-group-name step) before `GroupsContext.deleteGroup()` fires. Settings → Ownership
+   section, owner-only, always visible (unlike "Give up ownership" which needs another member to
+   exist).
+
+### Testing checklist for next session
+
+1. Run the migration above first (ask — don't assume the previous two are in either).
+2. Delete group: as owner, Settings → Delete group → wrong password shows an error and doesn't
+   delete; correct password deletes it, kicks you back to the groups list, and the group is gone
+   from every account that was in it (check on a second account too).
+3. Post an announcement / edit rules as a member with only that one new permission — confirm it
+   works for them and NOT for a member with neither.
+4. Owner protection: give a member `can_kick` — confirm they genuinely cannot mute/kick/ban the
+   owner (button hidden AND, if you can find a way to force the call, server-rejected). Have the
+   owner send an obvious flagged-wordlist message — confirm no one (including the owner themselves)
+   gets a working Mute/Kick/Ban on it, and that only a non-owner `can_view_flagged` holder can
+   dismiss/delete that specific flagged message.
+
 ## Session notes — where we left off (2026-08-25, later same day)
 
 **⚠️ NEXT STEP — run TWO migrations in order, then test everything below.** After the user ran

@@ -105,11 +105,14 @@ export default function GroupSettings() {
           </>
         ) : null}
 
-        {group.ownerId === g.me.userId && group.members.length > 1 ? (
+        {group.ownerId === g.me.userId ? (
           <>
             <Text className="mb-3 mt-7 text-xs font-semibold uppercase tracking-wider text-muted">Ownership</Text>
             <View className="gap-2.5">
-              <Row icon="swap-horizontal-outline" label="Give up ownership" danger onPress={() => router.push(`/groups/${group.id}/transfer`)} />
+              {group.members.length > 1 ? (
+                <Row icon="swap-horizontal-outline" label="Give up ownership" danger onPress={() => router.push(`/groups/${group.id}/transfer`)} />
+              ) : null}
+              <Row icon="trash-outline" label="Delete group" sub="Removes everyone and everything in it — permanent" danger onPress={() => router.push(`/groups/${group.id}/delete-group`)} />
             </View>
           </>
         ) : null}

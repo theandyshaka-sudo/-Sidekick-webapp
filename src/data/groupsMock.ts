@@ -73,6 +73,8 @@ export type PermissionRole = {
   canDeleteMessages: boolean;
   canAssignRoles: boolean;
   canManageRoles: boolean;
+  canPostAnnouncements: boolean;
+  canEditRules: boolean;
 };
 
 // Rules are stored as one text column ("1. ...\n2. ...\n3. ...") but edited/displayed as a

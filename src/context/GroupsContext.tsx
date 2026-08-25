@@ -16,7 +16,8 @@ export type CurrentGroupUser = { userId: string; name: string; realName: string;
 type NewGroup = { name: string; description: string; isPrivate: boolean; avatarUri: string };
 export type PermissionKey =
   | "canKick" | "canAnswerFaq" | "canViewFlagged"
-  | "canAcceptRequests" | "canEditGroup" | "canDeleteMessages" | "canAssignRoles" | "canManageRoles";
+  | "canAcceptRequests" | "canEditGroup" | "canDeleteMessages" | "canAssignRoles" | "canManageRoles"
+  | "canPostAnnouncements" | "canEditRules";
 // Every field on PermissionRole except id/name — the full real-permission patch shape.
 type RealPowers = Omit<PermissionRole, "id" | "name">;
 // Notice shown to someone who's been removed from a group, until they acknowledge it.
@@ -93,6 +94,8 @@ type GroupsState = {
   deleteFaq: (id: string, faqId: string) => void;
   // Owner hands the group to another current member. Irreversible from the old owner's side.
   transferOwnership: (id: string, newOwnerId: string) => Promise<void>;
+  // Owner-only, irreversible — deletes the group and everything in it.
+  deleteGroup: (id: string) => Promise<void>;
   // Re-fetch everything from Supabase — call when a groups screen opens so other people's actions
   // (a new request, a message, someone joining) show up.
   refreshGroups: () => void;
@@ -184,6 +187,8 @@ type RoleRow = {
   can_delete_messages: boolean;
   can_assign_roles: boolean;
   can_manage_roles: boolean;
+  can_post_announcements: boolean;
+  can_edit_rules: boolean;
 };
 type KickedRow = {
   group_id: string;
@@ -294,6 +299,7 @@ function buildGroup(
       canKick: r.can_kick, canAnswerFaq: r.can_answer_faq, canViewFlagged: r.can_view_flagged,
       canAcceptRequests: r.can_accept_requests, canEditGroup: r.can_edit_group, canDeleteMessages: r.can_delete_messages,
       canAssignRoles: r.can_assign_roles, canManageRoles: r.can_manage_roles,
+      canPostAnnouncements: r.can_post_announcements, canEditRules: r.can_edit_rules,
     })),
     bans: bans.map((b) => ({ userId: b.user_id, name: b.name, bannedAt: formatShortDate(b.banned_at) })),
     kickRecords: kicked.map((k) => ({
@@ -461,6 +467,7 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
       can_kick: p.canKick, can_answer_faq: p.canAnswerFaq, can_view_flagged: p.canViewFlagged,
       can_accept_requests: p.canAcceptRequests, can_edit_group: p.canEditGroup, can_delete_messages: p.canDeleteMessages,
       can_assign_roles: p.canAssignRoles, can_manage_roles: p.canManageRoles,
+      can_post_announcements: p.canPostAnnouncements, can_edit_rules: p.canEditRules,
     });
     if (error) console.error("[group_roles] create failed:", error.message);
   };
@@ -475,6 +482,8 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
     if (patch.canDeleteMessages !== undefined) dbPatch.can_delete_messages = patch.canDeleteMessages;
     if (patch.canAssignRoles !== undefined) dbPatch.can_assign_roles = patch.canAssignRoles;
     if (patch.canManageRoles !== undefined) dbPatch.can_manage_roles = patch.canManageRoles;
+    if (patch.canPostAnnouncements !== undefined) dbPatch.can_post_announcements = patch.canPostAnnouncements;
+    if (patch.canEditRules !== undefined) dbPatch.can_edit_rules = patch.canEditRules;
     const { error } = await supabase.from("group_roles").update(dbPatch).eq("id", roleId);
     if (error) { console.error("[group_roles] update failed:", error.message); return; }
     await loadGroups();
@@ -771,13 +780,20 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Persists for the owner or a can_edit_group role holder (matches the "owner or qualified
-  // member can update their group" RLS policy) — anyone else's attempt is caught client-side here
-  // and never reaches Supabase at all.
+  // Persists for the owner, a can_edit_group role holder (any field), or — when the patch touches
+  // only `rules` — a can_edit_rules holder too. The RLS policy itself is row-level (either real
+  // power can write any column of `groups`), so this client-side field check is what actually
+  // keeps a can_edit_rules-only holder from writing name/photo/etc. through this one function.
   const updateGroup = (id: string, p: Partial<Pick<Group, "name" | "description" | "avatarUri" | "isPrivate" | "rules">>) => {
     const group = getGroup(id);
     patch(id, (g) => withLog({ ...g, ...p }, `${displayName(me.name, me.realName)} updated the group settings`));
-    if (group && (group.ownerId === me.userId || hasRealPower(group, "canEditGroup"))) {
+    const isRulesOnly = Object.keys(p).length === 1 && p.rules !== undefined;
+    const authorized = !!group && (
+      group.ownerId === me.userId
+      || hasRealPower(group, "canEditGroup")
+      || (isRulesOnly && hasRealPower(group, "canEditRules"))
+    );
+    if (authorized && group) {
       const dbPatch: Record<string, unknown> = {};
       if (p.name !== undefined) dbPatch.name = p.name;
       if (p.description !== undefined) dbPatch.description = p.description;
@@ -861,6 +877,18 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
     await loadGroups();
   };
 
+  // Real, owner-only (RLS: "owner can delete their group") — deletes the group row, which cascades
+  // to every member/message/announcement/rule/role/etc. via existing foreign keys. Password
+  // re-confirmation happens in the UI before this is ever called, not here.
+  const deleteGroup = async (id: string) => {
+    const { error } = await supabase.from("groups").delete().eq("id", id);
+    if (error) {
+      console.error("[groups] delete failed:", error.message);
+      throw error;
+    }
+    setGroups((prev) => prev.filter((g) => g.id !== id));
+  };
+
   // Local/mock only — no backing table for the rank/powers role system itself. `roleId` lets
   // createUnifiedRole below reuse the same id as the matching real group_roles row.
   const createRole = (id: string, name: string, powers: Powers, roleId: string = nextId("role")) =>
@@ -923,7 +951,7 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
         myKickNotices, acknowledgeKickNotice,
         sendMessage, sendPhoto, editMessage, deleteMessage, unflagMessage, canSeeFlagged, canModerateMessage,
         updateGroup, createRole, updateRole, deleteRole,
-        postAnnouncement, deleteAnnouncement, askFaq, answerFaq, deleteFaq, transferOwnership,
+        postAnnouncement, deleteAnnouncement, askFaq, answerFaq, deleteFaq, transferOwnership, deleteGroup,
         refreshGroups,
       }}
     >
