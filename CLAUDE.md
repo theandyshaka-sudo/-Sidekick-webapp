@@ -2,9 +2,15 @@
 
 ## Session notes — where we left off (2026-08-25, later same day)
 
-**⚠️ NEXT STEP — run the new migration, then test everything below.** Paste
-`supabase/migrations/20260825140000_add_remaining_group_role_permissions.sql` into the Supabase
-SQL Editor (from the file, not chat) and run it. Nothing in this entry has been tested yet.
+**⚠️ NEXT STEP — run TWO migrations in order, then test everything below.** After the user ran
+`20260825140000_add_remaining_group_role_permissions.sql`, every group broke ("Group not found"
+everywhere, including brand-new groups) — the "Manage roles" policy on `group_roles` referenced
+`group_roles` from within its own USING clause (subquery joined back to `group_roles` as `gr2`),
+which Postgres flags as `infinite recursion detected in policy for relation "group_roles"` and
+fails on *every* query against that table. `20260825150000_fix_group_roles_policy_recursion.sql`
+fixes it by moving that check into a `security definer` function (same pattern
+`group_can_moderate()` already uses). Paste both files into the Supabase SQL Editor, in order
+(140000 then 150000) if not already run, and run them. Nothing in this entry has been tested yet.
 
 ### What changed
 
