@@ -1,5 +1,52 @@
 @AGENTS.md
 
+## Session notes — where we left off (2026-08-25)
+
+**⚠️ NEXT STEP — run the new migration, then test both fixes below.** Paste
+`supabase/migrations/20260825120000_add_conversation_read_receipts.sql` into the Supabase SQL
+Editor (from the actual file, not from chat) and run it. Nothing in this entry has been tested in
+the app yet.
+
+1. **Fixed: role assignment reverted after a moment.** `setMemberRoleUnified` was writing the real
+   permission (`custom_role_id`) to `group_members` correctly, but only ever patched the
+   *displayed* role (`role_id`) in local React state — never in the database. The next
+   `loadGroups()` refetch (on any account) pulled the stale `role_id` back from Postgres and the
+   assignment appeared to silently undo itself. Confirmed via `information_schema.columns` that
+   `role_id`/`custom_role_id` both already existed on `group_members`, so this was a client bug,
+   not a missing-migration issue. `assignPermissionRoleById` (`GroupsContext.tsx`) now writes both
+   columns in one `update`. **No new migration for this one** — pure code fix, already pushed
+   (`ad4fb7a`). **Still needs the user to actually retest** — the user reported it still failing
+   right after this fix went out, but that was likely a stale Vercel build (hard refresh needed) or
+   they hadn't grabbed the console error yet. Confirm on retest; if it still fails, check the
+   browser console for `[group_members] assign role failed: ...` — that error message is the next
+   diagnostic step, not a re-guess.
+
+2. **Fixed: unread-message badge/notification fired on every login, even for messages already
+   read.** Root cause: `MessagesContext`'s "when did I last read this conversation" tracking
+   (`lastReadAt`) was explicitly session-local/in-memory only (a pre-existing, deliberate
+   simplification, not a new bug) — it reset to empty on every login/reload, so every past message
+   counted as unread again. New `worker_last_read_at`/`client_last_read_at` columns on
+   `conversations` + a `mark_conversation_read()` RPC (security definer, only lets a participant
+   touch their own side of the row) persist this for real now. `my_conversations()` returns the
+   caller's own `last_read_at` (case-expression on which side they're on), and
+   `ChatThread`'s existing `markConversationRead()` call (already wired on screen mount) now fires
+   that RPC for real conversations instead of only zeroing local state. The local `lastReadAt`
+   React state was removed entirely — DB is now the only source of truth for this.
+   **Scope note:** this only covers direct (worker↔client) conversations, not Groups — group
+   tabs (Announcements/FAQ) still have no read/unread tracking at all, mock or real; that's still
+   an open "candidate" feature, not touched here.
+
+### Testing checklist for next session
+
+1. Run the migration above first (ask — don't assume).
+2. Role permissions: repeat the full checklist from the 2026-08-24 "even later same day" entry
+   below — create/assign a unified role, confirm it now survives a reload on both accounts, and
+   that the actual permission (e.g. answering FAQs) works for the assigned member.
+3. Read receipts: as account A, send a message to account B. On B, open the chat (marks it read),
+   then log out and back in (or just reload) — confirm the message no longer shows as unread/no
+   badge. Send a new message from A after that — confirm B *does* get a fresh unread badge for
+   only that new message, not the whole thread.
+
 ## Session notes — where we left off (2026-08-24, end of session)
 
 **⚠️ NEXT STEP — nothing in today's last batch (tab bar sizing / FAQ delete button / merged Roles

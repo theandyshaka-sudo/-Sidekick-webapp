@@ -30,6 +30,7 @@ type ConversationRow = {
   job_context: string;
   listing_price: number | null;
   listing_price_type: PriceType | null;
+  last_read_at: string | null;
   created_at: string;
 };
 
@@ -121,10 +122,6 @@ export function MessagesProvider({ children }: { children: ReactNode }) {
   const [reportStatuses, setReportStatuses] = useState<Record<string, ReportStatus>>({});
   // Standalone reports filed this session (e.g. group/member reports), shown in the admin console.
   const [filedReports, setFiledReports] = useState<PlatformReport[]>([]);
-  // When each real conversation was last opened (conversation id -> ISO time) — messages from the
-  // counterpart after this point count as unread. Session-local (no read-receipt column yet), so
-  // it resets on reload; that's an acceptable simplification at this stage.
-  const [lastReadAt, setLastReadAt] = useState<Record<string, string>>({});
   const idCounter = useRef(0);
   const { role } = useAppState();
   const { currentUser } = useAuth();
@@ -175,7 +172,7 @@ export function MessagesProvider({ children }: { children: ReactNode }) {
     });
     const fetched: Conversation[] = rows.map((row) => {
       const msgs = messagesByConv.get(row.id) ?? [];
-      const readAt = lastReadAt[row.id];
+      const readAt = row.last_read_at;
       const unread = msgs.filter((m) => !m.fromMe && (!readAt || (m.createdAt && m.createdAt > readAt))).length;
       return {
         id: row.id,
@@ -304,7 +301,12 @@ export function MessagesProvider({ children }: { children: ReactNode }) {
 
   const markConversationRead = (conversationId: string) => {
     updateConversations((list) => list.map((c) => (c.id === conversationId ? { ...c, unread: 0 } : c)));
-    setLastReadAt((prev) => ({ ...prev, [conversationId]: new Date().toISOString() }));
+    const conv = conversations.find((c) => c.id === conversationId);
+    if (conv?.remote) {
+      supabase.rpc("mark_conversation_read", { target_conversation_id: conversationId }).then(({ error }) => {
+        if (error) console.error("[mark_conversation_read] failed:", error.message);
+      });
+    }
   };
 
   const totalUnread = conversations.reduce((sum, c) => sum + c.unread, 0);
