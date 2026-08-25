@@ -454,9 +454,12 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.from("group_roles").delete().eq("id", roleId);
     if (error) console.error("[group_roles] delete failed:", error.message);
   };
-  const assignPermissionRoleById = async (groupId: string, userId: string, roleId: string | null) => {
-    const { error } = await supabase.from("group_members").update({ custom_role_id: roleId }).eq("group_id", groupId).eq("user_id", userId);
-    if (error) console.error("[group_members] assign permission role failed:", error.message);
+  // Writes both the displayed role and the real permission assignment in one update — role_id was
+  // previously only patched locally (see setMemberRole's old comment), so it silently reverted to
+  // whatever the DB still said on the next loadGroups() refetch. Now it actually persists.
+  const assignPermissionRoleById = async (groupId: string, userId: string, displayRoleId: string, realRoleId: string | null) => {
+    const { error } = await supabase.from("group_members").update({ role_id: displayRoleId, custom_role_id: realRoleId }).eq("group_id", groupId).eq("user_id", userId);
+    if (error) console.error("[group_members] assign role failed:", error.message);
   };
 
   const patch = (id: string, fn: (g: Group) => Group) =>
@@ -623,7 +626,9 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
     await loadGroups();
   };
 
-  // Local/mock only — no group_roles-style backing for the rank/powers system itself.
+  // Optimistic local patch only — setMemberRoleUnified (the only caller) is what actually
+  // persists role_id to group_members right after this, so the UI updates instantly without
+  // waiting on the round-trip.
   const setMemberRole = (id: string, userId: string, roleId: string) =>
     patch(id, (g) => {
       const mem = g.members.find((m) => m.userId === userId);
@@ -866,7 +871,7 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
     const group = getGroup(id);
     setMemberRole(id, userId, roleId);
     const hasReal = group?.permissionRoles.some((r) => r.id === roleId) ?? false;
-    await assignPermissionRoleById(id, userId, hasReal ? roleId : null);
+    await assignPermissionRoleById(id, userId, roleId, hasReal ? roleId : null);
     await loadGroups();
   };
 
