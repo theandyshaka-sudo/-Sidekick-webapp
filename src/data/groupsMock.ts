@@ -60,15 +60,19 @@ export type GroupMember = {
   customRoleId?: string;
 };
 
-// Real, DB-backed permission roles (group_roles table) — kick/mute/ban, answer FAQs, and view/act
-// on flagged messages. Deliberately separate from the mock GroupRole/Powers system above (rank,
-// acceptRequests, editGroup, deleteMessages, ban, assignRoles, manageRoles all stay local-only).
+// Real, DB-backed permission roles (group_roles table). `rank` is the only thing that stays
+// local/mock now (hierarchy for who can act on whom) — every togglable power is real.
 export type PermissionRole = {
   id: string;
   name: string;
   canKick: boolean;
   canAnswerFaq: boolean;
   canViewFlagged: boolean;
+  canAcceptRequests: boolean;
+  canEditGroup: boolean;
+  canDeleteMessages: boolean;
+  canAssignRoles: boolean;
+  canManageRoles: boolean;
 };
 
 // Rules are stored as one text column ("1. ...\n2. ...\n3. ...") but edited/displayed as a

@@ -161,7 +161,7 @@ export default function GroupDetail() {
     const actionable = g.canActOn(group, memberMenu);
     const isOwner = group.ownerId === g.me.userId;
     const canModerateGeneral = isOwner || g.hasRealPower(group, "canKick");
-    if (actionable && g.can(group, "assignRoles") && g.assignableRoles(group).length > 0)
+    if (actionable && g.hasRealPower(group, "canAssignRoles") && g.assignableRoles(group).length > 0)
       opts.push({ label: "Set role", icon: "shield-checkmark-outline", onPress: () => setRoleMenu(memberMenu) });
     if (actionable && canModerateGeneral)
       opts.push({ label: "Mute member", icon: "volume-mute-outline", onPress: () => setMuteTarget({ userId: memberMenu.userId, name: memberMenu.name, realName: memberMenu.realName }) });
@@ -227,7 +227,7 @@ export default function GroupDetail() {
   const mutedUntil = myMember?.mutedUntil;
   const isMuted = !!mutedUntil && new Date(mutedUntil).getTime() > Date.now();
   const faqPendingCount = group.faqs.filter((f) => f.answer == null).length;
-  const pendingDot = staff && g.can(group, "acceptRequests") && group.requests.length > 0;
+  const pendingDot = staff && g.hasRealPower(group, "canAcceptRequests") && group.requests.length > 0;
 
   const send = () => {
     if (!draft.trim()) return;
@@ -362,7 +362,7 @@ export default function GroupDetail() {
                   </View>
                 );
               }
-              const canOpen = mine || g.can(group, "deleteMessages") || g.canModerateMessage(group, m);
+              const canOpen = mine || g.hasRealPower(group, "canDeleteMessages") || g.canModerateMessage(group, m);
               return (
                 <Pressable
                   key={m.id}

@@ -70,15 +70,15 @@ export default function GroupSettings() {
       <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
         <Text className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">Manage</Text>
         <View className="gap-2.5">
-          {g.can(group, "acceptRequests") ? (
+          {g.hasRealPower(group, "canAcceptRequests") ? (
             <Row icon="person-add-outline" label="Join requests" sub="Accept or decline people who want in"
               badge={group.requests.length} dot={group.requests.length > 0}
               onPress={() => router.push(`/groups/${group.id}/requests`)} />
           ) : null}
-          {g.can(group, "editGroup") ? (
+          {g.hasRealPower(group, "canEditGroup") ? (
             <Row icon="create-outline" label="Edit group" sub="Name, photo, description & privacy" onPress={() => router.push(`/groups/${group.id}/edit`)} />
           ) : null}
-          {g.can(group, "manageRoles") ? (
+          {g.hasRealPower(group, "canManageRoles") ? (
             <Row icon="ribbon-outline" label="Roles & permissions" sub="Create roles and toggle their powers" onPress={() => router.push(`/groups/${group.id}/roles`)} />
           ) : null}
           {g.isStaff(group) ? (

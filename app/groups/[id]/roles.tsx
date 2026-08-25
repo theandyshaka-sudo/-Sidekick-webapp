@@ -8,52 +8,46 @@ import { PrimaryButton } from "../../../src/components/PrimaryButton";
 import { ToggleRow } from "../../../src/components/ToggleRow";
 import { useGroups } from "../../../src/context/GroupsContext";
 import { useRolePalette } from "../../../src/theme/useRolePalette";
-import { NO_POWERS, POWERS, type PermissionRole, type PowerKey, type Powers } from "../../../src/data/groupsMock";
+import { NO_POWERS, type PermissionRole } from "../../../src/data/groupsMock";
 
-// "kick"/"ban" are dead mock powers — real mute/kick/ban is fully covered by the "canKick" real
-// toggle below, so showing both would just be confusing. Everything else stays as-is.
-const MOCK_POWERS = POWERS.filter((p) => p.key !== "kick" && p.key !== "ban");
+// Every togglable power is real (group_roles-backed) now — nothing here is mock/local-only
+// anymore. `rank` (hierarchy) is the only thing that still lives outside this table.
+type RealPatch = Omit<PermissionRole, "id" | "name">;
 
-const REAL_TOGGLES: Array<{ key: "canKick" | "canAnswerFaq" | "canViewFlagged"; label: string; desc: string; icon: keyof typeof Ionicons.glyphMap }> = [
+const REAL_TOGGLES: Array<{ key: keyof RealPatch; label: string; desc: string; icon: keyof typeof Ionicons.glyphMap }> = [
   { key: "canKick", label: "Mute, kick & ban", desc: "Act on any member — not just flagged-message senders", icon: "exit-outline" },
   { key: "canAnswerFaq", label: "Answer FAQs", desc: "See and answer pending questions before they're public", icon: "help-buoy-outline" },
   { key: "canViewFlagged", label: "View & act on flagged messages", desc: "See flagged chat messages and mute/kick/ban whoever sent them", icon: "flag-outline" },
+  { key: "canAcceptRequests", label: "Manage join requests", desc: "Accept or decline people who ask to join", icon: "person-add-outline" },
+  { key: "canEditGroup", label: "Edit group", desc: "Change the name, photo, description & privacy", icon: "create-outline" },
+  { key: "canDeleteMessages", label: "Delete messages", desc: "Remove anyone's messages", icon: "trash-outline" },
+  { key: "canAssignRoles", label: "Promote & demote", desc: "Change other members' roles", icon: "swap-vertical-outline" },
+  { key: "canManageRoles", label: "Manage roles", desc: "Create, edit & delete roles and their powers", icon: "ribbon-outline" },
 ];
 
-const POWER_ICON: Record<PowerKey, keyof typeof Ionicons.glyphMap> = {
-  acceptRequests: "person-add-outline",
-  editGroup: "create-outline",
-  deleteMessages: "trash-outline",
-  kick: "exit-outline",
-  ban: "ban-outline",
-  assignRoles: "swap-vertical-outline",
-  manageRoles: "ribbon-outline",
+const NO_REAL_POWERS: RealPatch = {
+  canKick: false, canAnswerFaq: false, canViewFlagged: false,
+  canAcceptRequests: false, canEditGroup: false, canDeleteMessages: false, canAssignRoles: false, canManageRoles: false,
 };
 
-type RealPatch = Pick<PermissionRole, "canKick" | "canAnswerFaq" | "canViewFlagged">;
-
-// One role = one card, every switch it has (real, server-enforced ones and the older local/mock
-// ones) shown together — no separate "permissions" section.
+// One role = one card, every real switch it has, shown together.
 function RoleCard({
   name,
   memberCount,
-  powers,
   real,
-  onPowerChange,
   onRealChange,
   onDelete,
 }: {
   name: string;
   memberCount: number;
-  powers: Powers;
-  real: RealPatch | null; // null = this legacy role has no real (group_roles) counterpart
-  onPowerChange: (key: PowerKey, value: boolean) => void;
+  real: RealPatch | null; // null = this legacy role (e.g. built-in Vice President) has no real
+                           // group_roles counterpart — can't grant it any power from here.
   onRealChange: (patch: Partial<RealPatch>) => void;
   onDelete: () => void;
 }) {
   const palette = useRolePalette();
   const [open, setOpen] = useState(false);
-  const onCount = MOCK_POWERS.filter((p) => powers[p.key]).length + (real ? Object.values(real).filter(Boolean).length : 0);
+  const onCount = real ? Object.values(real).filter(Boolean).length : 0;
   return (
     <View className="rounded-2xl border border-border bg-surface">
       <Pressable onPress={() => setOpen((o) => !o)} className="flex-row items-center gap-3 p-4 active:opacity-70">
@@ -68,14 +62,17 @@ function RoleCard({
       </Pressable>
       {open ? (
         <View className="border-t border-border p-4">
-          <View className="gap-2.5">
-            {real ? REAL_TOGGLES.map((t) => (
-              <ToggleRow key={t.key} icon={t.icon} label={t.label} description={t.desc} value={real[t.key]} onValueChange={(v) => onRealChange({ [t.key]: v })} />
-            )) : null}
-            {MOCK_POWERS.map((p) => (
-              <ToggleRow key={p.key} icon={POWER_ICON[p.key]} label={p.label} description={p.desc} value={powers[p.key]} onValueChange={(v) => onPowerChange(p.key, v)} />
-            ))}
-          </View>
+          {real ? (
+            <View className="gap-2.5">
+              {REAL_TOGGLES.map((t) => (
+                <ToggleRow key={t.key} icon={t.icon} label={t.label} description={t.desc} value={real[t.key]} onValueChange={(v) => onRealChange({ [t.key]: v })} />
+              ))}
+            </View>
+          ) : (
+            <Text className="text-xs leading-5 text-muted">
+              This role predates real permissions and can't be granted any power here — delete it and create a new role instead.
+            </Text>
+          )}
           <Pressable onPress={onDelete} className="mt-4 flex-row items-center justify-center gap-1.5 rounded-xl border border-border py-2.5 active:opacity-70">
             <Ionicons name="trash-outline" size={15} color={palette.danger} />
             <Text className="text-sm font-semibold" style={{ color: palette.danger }}>Delete role</Text>
@@ -94,8 +91,7 @@ export default function GroupRoles() {
 
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newPowers, setNewPowers] = useState<Powers>({ ...NO_POWERS });
-  const [newReal, setNewReal] = useState<RealPatch>({ canKick: false, canAnswerFaq: false, canViewFlagged: false });
+  const [newReal, setNewReal] = useState<RealPatch>({ ...NO_REAL_POWERS });
   const [error, setError] = useState<string | null>(null);
 
   if (!group) {
@@ -108,11 +104,10 @@ export default function GroupRoles() {
 
   const createRole = () => {
     if (!newName.trim()) return setError("Name your new role.");
-    g.createUnifiedRole(group.id, newName.trim(), newPowers, newReal);
+    g.createUnifiedRole(group.id, newName.trim(), { ...NO_POWERS }, newReal);
     setCreating(false);
     setNewName("");
-    setNewPowers({ ...NO_POWERS });
-    setNewReal({ canKick: false, canAnswerFaq: false, canViewFlagged: false });
+    setNewReal({ ...NO_REAL_POWERS });
     setError(null);
   };
 
@@ -145,15 +140,18 @@ export default function GroupRoles() {
           </View>
 
           {editableRoles.map((role) => {
-            const real = group.permissionRoles.find((r) => r.id === role.id) ?? null;
+            const found = group.permissionRoles.find((r) => r.id === role.id) ?? null;
+            const real: RealPatch | null = found ? {
+              canKick: found.canKick, canAnswerFaq: found.canAnswerFaq, canViewFlagged: found.canViewFlagged,
+              canAcceptRequests: found.canAcceptRequests, canEditGroup: found.canEditGroup, canDeleteMessages: found.canDeleteMessages,
+              canAssignRoles: found.canAssignRoles, canManageRoles: found.canManageRoles,
+            } : null;
             return (
               <RoleCard
                 key={role.id}
                 name={role.name}
                 memberCount={group.members.filter((m) => m.roleId === role.id).length}
-                powers={role.powers}
-                real={real ? { canKick: real.canKick, canAnswerFaq: real.canAnswerFaq, canViewFlagged: real.canViewFlagged } : null}
-                onPowerChange={(key, value) => g.updateRole(group.id, role.id, { powers: { ...role.powers, [key]: value } })}
+                real={real}
                 onRealChange={(patch) => g.updatePermissionRole(group.id, role.id, patch)}
                 onDelete={() => g.deleteUnifiedRole(group.id, role.id)}
               />
@@ -168,9 +166,6 @@ export default function GroupRoles() {
             <View className="gap-2.5">
               {REAL_TOGGLES.map((t) => (
                 <ToggleRow key={t.key} icon={t.icon} label={t.label} description={t.desc} value={newReal[t.key]} onValueChange={(v) => setNewReal((prev) => ({ ...prev, [t.key]: v }))} />
-              ))}
-              {MOCK_POWERS.map((p) => (
-                <ToggleRow key={p.key} icon={POWER_ICON[p.key]} label={p.label} description={p.desc} value={newPowers[p.key]} onValueChange={(v) => setNewPowers((prev) => ({ ...prev, [p.key]: v }))} />
               ))}
             </View>
             <View className="mt-4 flex-row gap-2">

@@ -1,5 +1,67 @@
 @AGENTS.md
 
+## Session notes — where we left off (2026-08-25, later same day)
+
+**⚠️ NEXT STEP — run the new migration, then test everything below.** Paste
+`supabase/migrations/20260825140000_add_remaining_group_role_permissions.sql` into the Supabase
+SQL Editor (from the file, not chat) and run it. Nothing in this entry has been tested yet.
+
+### What changed
+
+The user made a role granting "Edit group" and "Manage roles" and found neither actually worked —
+the member with that role still couldn't edit the group, and re-opening the role on the owner's
+account showed those toggles switched back off. Root cause: of the unified role editor's 8
+toggles, only 3 (Mute/kick/ban, Answer FAQs, View & act on flagged) were ever real/DB-backed. The
+other 5 — Manage join requests, Edit group, Delete messages, Promote & demote, Manage roles — were
+part of the *original* mock rank/powers system from 2026-08-21, deliberately scoped as local-only
+at the time (see that session's entry below) and never revisited when the unified editor merged
+them visually with the real ones on 2026-08-24. So they looked identical to the real toggles in the
+UI but only ever patched React state — never written to Supabase — which is why they silently
+reverted on reload and never actually granted anything server-side.
+
+**Fix: all 8 are now real**, following the exact same `group_roles` pattern as the original 3:
+- 5 new boolean columns on `group_roles`: `can_accept_requests`, `can_edit_group`,
+  `can_delete_messages`, `can_assign_roles`, `can_manage_roles`.
+- `groups` UPDATE policy, the `group_requests` decline policy, `accept_group_request()`, and the
+  `group_messages` update policy each now also accept the relevant role holder, not just the owner.
+- New `assign_member_role()` RPC (owner or `can_assign_roles`) replaces the old direct
+  `group_members` update for setting someone's role — kept as an RPC rather than widening the
+  existing owner-only row policy, since that policy also covers `muted_until` and other columns.
+- `group_roles` itself (create/edit/delete a role) is now owner-**or**-`can_manage_roles`-gated,
+  not owner-only.
+- A new trigger resets a member's `role_id` back to `'member'` when the role they're on gets
+  deleted — needed now that `role_id` is a real, authoritative column instead of a local display
+  value that happened to reset itself.
+- Client: `roles.tsx`'s "unified" editor now shows all 8 toggles as real (no more separate mock
+  section — there's nothing left to be mock). `GroupsContext`'s `hasRealPower`/`isStaff`/
+  `deleteMessage`/`updateGroup` and the `settings.tsx`/`index.tsx` gating call sites all moved off
+  the old `can(group, "...")` mock check onto `hasRealPower(group, "...")`.
+
+**Known regression, not fixed here, flag if it comes up:** the built-in "Vice President" starter
+role (and any other legacy role whose id isn't a UUID) has no real `group_roles` row and now can't
+be granted any power at all from the Roles screen — previously it had mock powers that *looked*
+like they worked in the UI (menu items would show) but never actually persisted or enforced
+anything server-side either, so nothing that functionally worked before stopped working. If the
+user relies on VP for real powers, they need to delete it and create a new role instead (roles.tsx
+says so inline now). Owner access is completely unaffected either way.
+
+### Testing checklist for next session
+
+1. Run the migration above first (ask — don't assume).
+2. Create a role with "Edit group" on, assign it to a member, confirm on *that member's account*
+   they can actually open Edit group and save a change (name/photo/description/privacy) — and that
+   it's still there after a reload on both accounts.
+3. Same for "Manage roles" — assigned member can create/edit/delete other roles.
+4. Same for "Manage join requests" (accept/decline actually work from that member's account, not
+   just the owner's) and "Delete messages" (that member can delete someone else's non-flagged
+   message).
+5. "Promote & demote" (canAssignRoles) — a member with only this power can open "Set role" on
+   another member and have it stick.
+6. Re-run the 2026-08-24 role-permission checklist too (can_kick/can_answer_faq/can_view_flagged)
+   to confirm nothing regressed there.
+7. Delete a role that's currently assigned to someone — confirm that member falls back to "Member"
+   for real (reload their account, not just the owner's).
+
 ## Session notes — where we left off (2026-08-25)
 
 **⚠️ NEXT STEP — run the new migration, then test both fixes below.** Paste
