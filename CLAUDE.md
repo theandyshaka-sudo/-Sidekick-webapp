@@ -2,8 +2,20 @@
 
 ## Session notes — where we left off (2026-08-25, even later same day)
 
-**⚠️ NEXT STEP — run `20260825160000_group_deletion_and_moderation_fixes.sql`** (after the two
-migrations from the entry below it, if not already run). Nothing in this entry has been tested yet.
+**⚠️ NEXT STEP FIRST THING TOMORROW — "Delete group" doesn't work.** The user ran the migration
+below and tried it at the very end of the session, said "the delete feature isn't working," and
+had to log off before saying what actually happens (wrong-password error? silent no-op? crash?
+group still shows up after?). **Ask them exactly what they saw before touching any code** —
+don't guess-fix. Likely suspects to check once you know the symptom: `verifyPassword()` in
+`AuthContext.tsx` (does `signInWithPassword` re-auth actually succeed for an already-signed-in
+session — worth confirming this pattern works at all in Supabase JS v2, it wasn't tested before
+shipping), the new `groups` DELETE RLS policy (owner-only — confirm `owner_id` really matches
+`auth.uid()` for the group being deleted), and whether the migration actually ran clean (check
+`information_schema` the way we did for group_members earlier, or just retry the delete and grab
+the browser console error — `[groups] delete failed: ...` if it's an RLS/DB rejection).
+
+**⚠️ Also still pending — run `20260825160000_group_deletion_and_moderation_fixes.sql`** (after the
+two migrations from the entry below it, if not already run). Nothing in this entry has been tested.
 
 While testing the previous batch, the user found 6 duplicate groups from repeatedly retrying
 "Create group" during the recursion-bug window (the RPC itself was fine each time — only the
