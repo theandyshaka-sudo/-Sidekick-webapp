@@ -1,5 +1,82 @@
 @AGENTS.md
 
+## TL;DR — everything from 2026-08-26, and what to do next
+
+**Done and live (pushed, commit `2224855`):**
+- Groups feature arc is fully finished and tested — delete-group, the two new role permissions, and
+  owner protection all confirmed working by the user. Groups should NOT be reopened unless asked.
+- Fixed a real bug: `deleteGroup()` used to silently no-op when RLS blocked it (Supabase returns no
+  error on a zero-row delete) — now throws a real error instead.
+- Removed notification/alarm preferences entirely (3 screens, their settings rows, and all related
+  context state) — decided not to build any tier of it, since this is a web-only build and can't
+  deliver real notifications to most iPhone users without a home-screen PWA install.
+
+**Not started, paused on the user:**
+- Real Stripe subscription billing for the worker plan tiers (Starter/Growth/Pro/Crew,
+  `app/checkout.tsx` — NOT job payment, jobs stay cash). This is on the original `HANDOFF.md` plan
+  already, not new scope. The user began Stripe account setup (test mode, site URL given as
+  `https://sidekick-webapp.vercel.app`, told to skip Invoicing/Tax and use recurring/subscription
+  billing instead, was walked through creating the 4 plan products) but **did not finish** and
+  needs to talk to their boss before continuing — first mention of a boss/stakeholder on this
+  project; treat billing/business-model decisions as needing that person's sign-off too, not just
+  the user's.
+
+**Tomorrow, in order:**
+1. Ask whether the boss conversation happened and whether to continue with Stripe.
+2. If yes: ask where the Stripe dashboard setup was left off (are all 4 products/prices created
+   yet?), then get the test-mode secret key from them (**never pasted into chat** — set directly as
+   a Supabase secret) and confirm the two still-unconfirmed build decisions: (a) use Stripe
+   Checkout's hosted page instead of the current raw-card-field UI (that field collects real card
+   numbers with a comment about sending them to a backend later, which would be a PCI-DSS violation
+   if ever wired up as-is), and (b) implement the server-side pieces as Supabase Edge Functions
+   (this app has zero server code today — static export + Supabase only) rather than adding a
+   second server platform.
+3. Only after both are confirmed: build a Checkout-session Edge Function, a webhook Edge Function,
+   and a `subscriptions` table synced from Stripe — all in Stripe **test mode** first.
+
+## Session notes — where we left off (2026-08-26, later same day)
+
+**Next feature picked: real Stripe billing for the subscription plans — paused before starting,
+resume here.** Confirmed with the user: job payment stays cash-only (already real, untouched —
+`app/checkout.tsx` is unrelated to jobs, it's the worker's own subscription payment to SideKick
+for a Starter/Growth/Pro/Crew plan tier, `src/data/plans.ts`). This is actually on the original
+`HANDOFF.md` plan already (§2 tech stack table: "Stripe Billing (plain subscriptions, not
+Connect)" for monetization, cash for job payment) — not new scope, just picking up a documented
+gap.
+
+**Two decisions proposed, not yet confirmed by the user (ask again before writing code):**
+1. **Security fix needed regardless of anything else:** the current `checkout.tsx` collects raw
+   card number/CVC into plain TextInputs with a comment saying real charging will send that to a
+   backend later — that would be a real PCI-DSS violation if ever wired up as-is. Proposed
+   replacing it with **Stripe Checkout** (Stripe-hosted payment page, redirect out and back) so
+   card data never touches this app's code at all — safer and far less integration surface than
+   embedding Stripe Elements in the custom form. User hadn't confirmed this before pausing.
+2. **No server-side code exists in this app today** — it's a static export (`expo export -p web`)
+   with Supabase as the only backend, no `api/` folder, nothing on Vercel beyond static hosting.
+   Stripe needs a secret key + webhook handling that can never live in client code. Proposed
+   **Supabase Edge Functions** (two: one to create a Checkout session, one to receive Stripe
+   webhooks and sync subscription status into a new Postgres table) to keep everything on the one
+   backend already in use, rather than adding a second server platform (e.g. Vercel serverless
+   functions). Also not yet confirmed.
+
+**Before resuming:** confirm the user has (or is ready to create) a Stripe account and can get API
+keys — walk them through Stripe's dashboard for that if not, then confirm the two decisions above
+before writing any code. `.env`/`.env.example` already have commented-out `STRIPE_SECRET_KEY` (and
+`STRIPE_CONNECT_WEBHOOK_SECRET`/`STRIPE_IDENTITY_WEBHOOK_SECRET`, both irrelevant now — Connect was
+for marketplace payouts, not needed since jobs are cash; Identity was for ID verification, removed
+2026-08-18) — only `STRIPE_SECRET_KEY` plus a new webhook-secret var will actually be used.
+
+**Paused mid-Stripe-signup, no code written yet — user needs to talk to their boss first.** They
+created a Stripe account and got partway through test-mode setup (site URL given:
+`https://sidekick-webapp.vercel.app`; told to skip Stripe Invoicing and skip Stripe Tax for now,
+pick whatever option is for recurring/subscription billing instead; walked through creating the 4
+plan products with monthly+yearly recurring prices matching `src/data/plans.ts`, not confirmed
+finished). They then said they need to talk to their boss before going further with any of this —
+**there's a boss/stakeholder on this project who wasn't mentioned before now**, so treat
+billing/tax/business-model decisions specifically as needing that person's sign-off, not just the
+user's, going forward. Resume by asking where the Stripe setup was left off and whether the boss
+conversation happened yet — don't assume either.
+
 ## Session notes — where we left off (2026-08-26)
 
 **Groups is now fully real and confirmed working, closing out the arc that started 2026-08-20.**
@@ -15,8 +92,8 @@ silently succeeds with zero rows affected (no error) when RLS blocks it, which i
 visually vanished for a second (optimistic local state update) then reappeared on the next
 `loadGroups()` refetch. Hardened `deleteGroup()` in `GroupsContext.tsx` against this class of bug
 going forward: it now does `.select("id")` on the delete and throws an explicit error if zero rows
-came back, instead of trusting `error === null` alone. **Not yet committed to git** — ask before
-assuming this fix is pushed/live if picking this back up.
+came back, instead of trusting `error === null` alone. **Committed and pushed later this same
+session** (`2224855`, bundled with the notification/alarm removal below) — this one IS live.
 
 All three test batches confirmed working by the user: delete-group (used to clear out the 5
 duplicate groups from the earlier recursion-bug retries too), the two new role permissions
