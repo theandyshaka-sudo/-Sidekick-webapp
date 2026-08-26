@@ -881,10 +881,18 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
   // to every member/message/announcement/rule/role/etc. via existing foreign keys. Password
   // re-confirmation happens in the UI before this is ever called, not here.
   const deleteGroup = async (id: string) => {
-    const { error } = await supabase.from("groups").delete().eq("id", id);
+    // .select() so we get the deleted row(s) back — a delete blocked entirely by RLS (e.g. the
+    // "owner can delete their group" policy missing or not matching) returns success with zero
+    // rows and NO error, which would otherwise look like it worked until the next refetch brings
+    // the group right back.
+    const { data, error } = await supabase.from("groups").delete().eq("id", id).select("id");
     if (error) {
       console.error("[groups] delete failed:", error.message);
       throw error;
+    }
+    if (!data || data.length === 0) {
+      console.error("[groups] delete affected 0 rows — likely blocked by RLS or the row/policy doesn't exist");
+      throw new Error("Delete was blocked — you may not be recognized as the owner, or the delete-group migration hasn't been run yet.");
     }
     setGroups((prev) => prev.filter((g) => g.id !== id));
   };

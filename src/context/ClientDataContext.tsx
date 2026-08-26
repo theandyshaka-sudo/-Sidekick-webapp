@@ -19,19 +19,11 @@ export type ClientLocation = {
   city: string;
 };
 
-export type ClientNotificationPrefs = {
-  bookingUpdates: boolean;
-  messages: boolean;
-  promos: boolean;
-};
-
 type ClientDataState = {
   profile: ClientProfileFields;
   updateProfile: (patch: Partial<ClientProfileFields>) => void;
   location: ClientLocation;
   updateLocation: (patch: Partial<ClientLocation>) => void;
-  notificationPrefs: ClientNotificationPrefs;
-  updateNotificationPrefs: (patch: Partial<ClientNotificationPrefs>) => void;
   nearbyWorkers: NearbyWorker[];
   refreshNearbyWorkers: () => void;
 };
@@ -92,11 +84,6 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     avatarUri: seedProfile.avatarUri,
   });
   const [location, setLocation] = useState<ClientLocation>({ ...seedLocation });
-  const [notificationPrefs, setNotificationPrefs] = useState<ClientNotificationPrefs>({
-    bookingUpdates: true,
-    messages: true,
-    promos: false,
-  });
   const [nearbyWorkers, setNearbyWorkers] = useState<NearbyWorker[]>([]);
   const { currentUser } = useAuth();
 
@@ -131,9 +118,6 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   const updateLocation = (patch: Partial<ClientLocation>) =>
     setLocation((prev) => ({ ...prev, ...patch }));
 
-  const updateNotificationPrefs = (patch: Partial<ClientNotificationPrefs>) =>
-    setNotificationPrefs((prev) => ({ ...prev, ...patch }));
-
   return (
     <ClientDataContext.Provider
       value={{
@@ -141,8 +125,6 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         updateProfile,
         location,
         updateLocation,
-        notificationPrefs,
-        updateNotificationPrefs,
         nearbyWorkers,
         refreshNearbyWorkers,
       }}

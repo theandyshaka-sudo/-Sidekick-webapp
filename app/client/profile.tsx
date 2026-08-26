@@ -58,11 +58,6 @@ export default function ClientProfile() {
       </Text>
       <View className="gap-2.5">
         <SettingsRow
-          icon="notifications-outline"
-          label="Notifications"
-          onPress={() => router.push("/settings/client-notifications")}
-        />
-        <SettingsRow
           icon="contrast-outline"
           label="Appearance"
           onPress={() => router.push("/settings/appearance")}

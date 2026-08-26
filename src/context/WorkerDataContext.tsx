@@ -24,26 +24,6 @@ export type WorkerProfileFields = {
   avatarUri: string;
 };
 
-export type WorkerNotificationPrefs = {
-  newRequests: boolean;
-  messages: boolean;
-  cashReminders: boolean;
-  tips: boolean;
-};
-
-// Job reminder alarm — reminds the worker some minutes before each scheduled job so they have
-// time to get ready. Sound is chosen from a short list of basic tones.
-export type AlarmSound = "Chime" | "Bell" | "Marimba" | "Radar" | "Digital" | "Beep";
-
-export type AlarmPrefs = {
-  enabled: boolean;
-  leadMinutes: number; // how long before the job the alarm goes off
-  sound: AlarmSound;
-};
-
-export const ALARM_SOUNDS: AlarmSound[] = ["Chime", "Bell", "Marimba", "Radar", "Digital", "Beep"];
-export const ALARM_LEAD_PRESETS = [15, 30, 45, 60, 90];
-
 // Self-reported age — no ID, no admin review. The worker picks a number and confirms it; that's
 // the whole check. `lastChangedAt` gates a once-a-month cooldown on changing it (set on the first
 // pick too, so the cooldown starts counting immediately).
@@ -65,10 +45,6 @@ type WorkerDataState = {
   addService: (service: Omit<WorkerServiceItem, "id">) => void;
   updateService: (id: string, patch: Partial<WorkerServiceItem>) => void;
   removeService: (id: string) => void;
-  notificationPrefs: WorkerNotificationPrefs;
-  updateNotificationPrefs: (patch: Partial<WorkerNotificationPrefs>) => void;
-  alarmPrefs: AlarmPrefs;
-  updateAlarmPrefs: (patch: Partial<AlarmPrefs>) => void;
   ageInfo: AgeInfo;
   setAge: (age: number) => Promise<SetAgeResult>;
 };
@@ -110,17 +86,6 @@ export function WorkerDataProvider({ children }: { children: ReactNode }) {
     avatarUri: seedProfile.avatarUri,
   });
   const [services, setServices] = useState<WorkerServiceItem[]>([]);
-  const [notificationPrefs, setNotificationPrefs] = useState<WorkerNotificationPrefs>({
-    newRequests: true,
-    messages: true,
-    cashReminders: true,
-    tips: false,
-  });
-  const [alarmPrefs, setAlarmPrefs] = useState<AlarmPrefs>({
-    enabled: true,
-    leadMinutes: 45,
-    sound: "Chime",
-  });
   const [ageInfo, setAgeInfo] = useState<AgeInfo>({
     age: null,
     confirmedAt: null,
@@ -222,12 +187,6 @@ export function WorkerDataProvider({ children }: { children: ReactNode }) {
       });
   };
 
-  const updateNotificationPrefs = (patch: Partial<WorkerNotificationPrefs>) =>
-    setNotificationPrefs((prev) => ({ ...prev, ...patch }));
-
-  const updateAlarmPrefs = (patch: Partial<AlarmPrefs>) =>
-    setAlarmPrefs((prev) => ({ ...prev, ...patch }));
-
   // Once a month, counted from the last change (or the first pick — the cooldown starts
   // immediately so age can't be flipped back and forth to dodge category gating). Persisted to
   // the `users` row so the cooldown survives an app restart.
@@ -267,10 +226,6 @@ export function WorkerDataProvider({ children }: { children: ReactNode }) {
         addService,
         updateService,
         removeService,
-        notificationPrefs,
-        updateNotificationPrefs,
-        alarmPrefs,
-        updateAlarmPrefs,
         ageInfo,
         setAge,
       }}

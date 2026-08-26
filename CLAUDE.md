@@ -1,5 +1,80 @@
 @AGENTS.md
 
+## Session notes — where we left off (2026-08-26)
+
+**Groups is now fully real and confirmed working, closing out the arc that started 2026-08-20.**
+Ran `20260825160000_group_deletion_and_moderation_fixes.sql` (the user hit a real SQL Editor
+gotcha pasting it from chat — the `$$...$$` function-body delimiters around `group_can_moderate()`
+got corrupted in transit, throwing `syntax error at or near "if"`; re-copying straight from the
+file on disk instead of the chat window fixed it — same corruption class noted in the 2026-08-24
+entry below, now confirmed to also hit plain code, not just comments).
+
+**Root cause of the "delete group" bug from the entry below:** the migration containing the
+`"owner can delete their group"` DELETE policy simply hadn't been run yet. Supabase's `.delete()`
+silently succeeds with zero rows affected (no error) when RLS blocks it, which is why the group
+visually vanished for a second (optimistic local state update) then reappeared on the next
+`loadGroups()` refetch. Hardened `deleteGroup()` in `GroupsContext.tsx` against this class of bug
+going forward: it now does `.select("id")` on the delete and throws an explicit error if zero rows
+came back, instead of trusting `error === null` alone. **Not yet committed to git** — ask before
+assuming this fix is pushed/live if picking this back up.
+
+All three test batches confirmed working by the user: delete-group (used to clear out the 5
+duplicate groups from the earlier recursion-bug retries too), the two new role permissions
+(`can_post_announcements`, `can_edit_rules`), and owner protection (nobody can moderate the owner,
+owner can't act on their own flagged message).
+
+**Groups is done as a feature arc — do not reopen it without the user asking.** Small polish ideas
+already offered and declined/deferred, only revisit if asked: read receipts/unread badges on group
+tabs, @mentions, pinning, invite links, real image-moderation API (photo flagging is report-only
+today).
+
+### Notification/alarm preferences — removed entirely, not built out (same session, later)
+
+Discussed building real notification/alarm prefs. Surfaced that this is a **web-only build** (no
+`expo-notifications`, no `eas.json`, deployed via `expo export -p web` to Vercel) — actual push
+requires either (a) in-tab-only browser Notification API (works everywhere but only while a tab is
+open) or (b) full web push (service worker + VAPID + backend sender), and (b) still wouldn't reach
+most iPhone users since Safari only allows background push for a site added to the Home Screen as
+a PWA, not a plain browser tab. Given that, the user chose to **drop the feature entirely** rather
+than build any tier of it.
+
+**Removed, all pushed... no wait, not yet pushed — see below:**
+- Deleted `app/settings/worker-notifications.tsx`, `app/settings/client-notifications.tsx`,
+  `app/settings/worker-alarms.tsx`.
+- Removed their "Notifications"/"Alarms" rows from `app/worker/profile.tsx` and
+  `app/client/profile.tsx`.
+- Removed `notificationPrefs`/`updateNotificationPrefs` from `ClientDataContext.tsx` and
+  `notificationPrefs`/`updateNotificationPrefs`/`alarmPrefs`/`updateAlarmPrefs` (plus the
+  `WorkerNotificationPrefs`/`AlarmPrefs`/`AlarmSound`/`ALARM_SOUNDS`/`ALARM_LEAD_PRESETS` types and
+  constants) from `WorkerDataContext.tsx`. These were always local-only/mock — no migration or
+  Supabase table ever existed for them, so nothing to clean up server-side.
+- `tsc --noEmit` passes clean after the removal — no dangling references anywhere.
+
+**Not committed/pushed yet** — this removal plus the earlier `deleteGroup()` RLS hardening fix are
+both sitting as uncommitted local changes. Ask the user before assuming either is live.
+
+**iOS native app — asked about, not started.** User asked how hard it'd be to ship this as a real
+iOS App Store app. Answer given: the Expo/React Native code itself would port with modest work (no
+`eas.json` yet, needs a deep-link-based auth redirect instead of `window.location.origin`, native
+permission strings for the image picker, EAS Build + Apple Developer account). Flagged the bigger
+risk is **not code** — Apple App Review is strict about apps connecting minors with adult strangers
+in person, and this app has no ID verification, guardian consent, or background checks, so App
+Store rejection (or later removal) is a real possibility independent of build quality. Nothing
+started on this; revisit only if the user decides to pursue it, and loop in the standing legal
+caveat again if so.
+
+### What's next — remaining incomplete surface
+
+**Checkout/billing** (`app/checkout.tsx`) is now the only major mock surface left — still a demo
+flow with no real Stripe (or other) payment integration. Everything else core (Discover, chat,
+bookings, ratings, distance/radius, photos, account settings, 2FA, appearance, Groups) is real and
+Supabase-backed as of today.
+
+**Standing legal caveat, still true, don't relitigate on small changes:** self-reported age with no
+ID verification, matching minors with adult strangers for in-person work, no guardian consent flow
+or background checks. Raise it again proactively the moment anything that looks like a real-launch
+or App Store submission decision comes up.
+
 ## Session notes — where we left off (2026-08-25, even later same day)
 
 **⚠️ NEXT STEP FIRST THING TOMORROW — "Delete group" doesn't work.** The user ran the migration

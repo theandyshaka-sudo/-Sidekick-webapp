@@ -131,16 +131,6 @@ export default function WorkerProfile() {
           onPress={() => router.push("/settings/worker-services")}
         />
         <SettingsRow
-          icon="notifications-outline"
-          label="Notifications"
-          onPress={() => router.push("/settings/worker-notifications")}
-        />
-        <SettingsRow
-          icon="alarm-outline"
-          label="Alarms"
-          onPress={() => router.push("/settings/worker-alarms")}
-        />
-        <SettingsRow
           icon="contrast-outline"
           label="Appearance"
           onPress={() => router.push("/settings/appearance")}
